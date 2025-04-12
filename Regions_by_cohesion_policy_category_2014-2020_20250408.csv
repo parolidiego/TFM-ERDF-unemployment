@@ -1,0 +1,274 @@
+cntr_id,nuts_id,nuts_name,population,GDPpc,catg,catg_name
+BE,BE10,Région de Bruxelles-Capitale / Brussels Hoofdstedelijk Gewest,1058.731,220.2,MD,More developed
+BE,BE21,Prov. Antwerpen,1722.547,135.3,MD,More developed
+BE,BE22,Prov. Limburg (B),829.432,96.1,MD,More developed
+BE,BE23,Prov. Oost-Vlaanderen,1414.194,105,MD,More developed
+BE,BE24,Prov. Vlaams-Brabant,1064.186,123.4,MD,More developed
+BE,BE25,Prov. West-Vlaanderen,1152.364,110.2,MD,More developed
+BE,BE31,Prov. Brabant Wallon,374.566,116,MD,More developed
+BE,BE32,Prov. Hainaut,1301.806,76.4,TR,Transition
+BE,BE33,Prov. Liège,1056.702,86.7,TR,Transition
+BE,BE34,Prov. Luxembourg (B),265.278,78.5,TR,Transition
+BE,BE35,Prov. Namur,466.863,81.6,TR,Transition
+BG,BG31,Severozapaden,923.008,27.5,LD,Less developed
+BG,BG32,Severen tsentralen,928.104,29.2,LD,Less developed
+BG,BG33,Severoiztochen,991.598,35.9,LD,Less developed
+BG,BG34,Yugoiztochen,1123.585,35,LD,Less developed
+BG,BG41,Yugozapaden,2114.756,71.4,LD,Less developed
+BG,BG42,Yuzhen tsentralen,1541.712,29.9,LD,Less developed
+CZ,CZ01,Praha,1221.564,173.8,MD,More developed
+CZ,CZ02,Střední Čechy,1214.492,74.3,LD,Less developed
+CZ,CZ03,Jihozápad,1199.203,70.2,LD,Less developed
+CZ,CZ04,Severozápad,1139.364,64.2,LD,Less developed
+CZ,CZ05,Severovýchod,1501.059,66,LD,Less developed
+CZ,CZ06,Jihovýchod,1657.105,72.8,LD,Less developed
+CZ,CZ07,Střední Morava,1232.222,64.1,LD,Less developed
+CZ,CZ08,Moravskoslezsko,1249.616,67.9,LD,Less developed
+DK,DK01,Hovedstaden,1654.848,147.5,MD,More developed
+DK,DK02,Sjælland,819.752,88.6,TR,Transition
+DK,DK03,Syddanmark,1196.378,110.5,MD,More developed
+DK,DK04,Midtjylland,1241.305,113.7,MD,More developed
+DK,DK05,Nordjylland,579.054,108.9,MD,More developed
+DE,DE11,Stuttgart,4006.483,137.2,MD,More developed
+DE,DE12,Karlsruhe,2738.337,131.9,MD,More developed
+DE,DE13,Freiburg,2195.774,113.1,MD,More developed
+DE,DE14,Tübingen,1807.733,122.3,MD,More developed
+DE,DE21,Oberbayern,4316.797,161.9,MD,More developed
+DE,DE22,Niederbayern,1192.545,115,MD,More developed
+DE,DE23,Oberpfalz,1084.961,122.9,MD,More developed
+DE,DE24,Oberfranken,1085.341,112.5,MD,More developed
+DE,DE25,Mittelfranken,1712.412,132.1,MD,More developed
+DE,DE26,Unterfranken,1330.639,115.7,MD,More developed
+DE,DE27,Schwaben,1787.123,119.8,MD,More developed
+DE,DE30,Berlin,3422.293,101.7,MD,More developed
+DE,DE41,Brandenburg - Nordost,1144.127,76.4,TR,Transition
+DE,DE42,Brandenburg - Südwest,1384.963,88.9,TR,Transition
+DE,DE50,Bremen,662.108,158.6,MD,More developed
+DE,DE60,Hamburg,1770.456,187.1,MD,More developed
+DE,DE71,Darmstadt,3782.753,156.6,MD,More developed
+DE,DE72,Gießen,1050.557,107.7,MD,More developed
+DE,DE73,Kassel,1234.929,113.8,MD,More developed
+DE,DE80,Mecklenburg-Vorpommern,1671.951,82.5,TR,Transition
+DE,DE91,Braunschweig,1628.234,109.7,MD,More developed
+DE,DE92,Hannover,2153.067,112.8,MD,More developed
+DE,DE93,Lüneburg,1698.798,83.9,TR,Transition
+DE,DE94,Weser-Ems,2479.713,101.1,MD,More developed
+DE,DEA1,Düsseldorf,5197.926,132.7,MD,More developed
+DE,DEA2,Köln,4385.968,117,MD,More developed
+DE,DEA3,Münster,2609.365,98.6,MD,More developed
+DE,DEA4,Detmold,2054.681,109.8,MD,More developed
+DE,DEA5,Arnsberg,3710.68,106.9,MD,More developed
+DE,DEB1,Koblenz,1503.115,96.1,MD,More developed
+DE,DEB2,Trier,515.226,94.5,MD,More developed
+DE,DEB3,Rheinhessen-Pfalz,2017.302,105.4,MD,More developed
+DE,DEC0,Saarland,1033.202,112.3,MD,More developed
+DE,DED1,Chemnitz,1495.308,83,TR,Transition
+DE,DED2,Dresden,1642.302,88.4,TR,Transition
+DE,DED3,Leipzig,1068.409,90,MD,More developed
+DE,DEE0,Sachsen-Anhalt,2397.662,83.9,TR,Transition
+DE,DEF0,Schleswig-Holstein,2834.213,100.6,MD,More developed
+DE,DEG0,Thüringen,2278.552,83.7,TR,Transition
+EE,EE00,Eesti,1341.233,67.7,LD,Less developed
+IE,IE01,"Border, Midland and Western",1188.399,95.6,MD,More developed
+IE,IE02,Southern and Eastern,3237.064,151.1,MD,More developed
+EL,GR11,"Anatoliki Makedonia, Thraki",606.751,67.8,LD,Less developed
+EL,GR12,Kentriki Makedonia,1940.564,74.8,LD,Less developed
+EL,GR13,Dytiki Makedonia,293.382,85.6,TR,Transition
+EL,GR14,Thessalia,736.174,71,LD,Less developed
+EL,GR21,Ipeiros,353.595,64.4,LD,Less developed
+EL,GR22,Ionia Nisia,230.081,84.6,TR,Transition
+EL,GR23,Dytiki Ellada,740.713,66.2,LD,Less developed
+EL,GR24,Sterea Ellada,554.961,85.9,TR,Transition
+EL,GR25,Peloponnisos,592.859,75.1,TR,Transition
+EL,GR30,Attiki,4073.629,120.1,MD,More developed
+EL,GR41,Voreio Aigaio,200.439,75.5,TR,Transition
+EL,GR42,Notio Aigaio,306.674,112.4,MD,More developed
+EL,GR43,Kriti,607.735,83.2,TR,Transition
+ES,ES11,Galicia,2734.703,91,MD,More developed
+ES,ES12,Principado de Asturias,1058.408,96.6,MD,More developed
+ES,ES13,Cantabria,572.879,101.8,MD,More developed
+ES,ES21,País Vasco,2134.379,135.2,MD,More developed
+ES,ES22,Comunidad Foral de Navarra,609.426,130.5,MD,More developed
+ES,ES23,La Rioja,313.037,113.3,MD,More developed
+ES,ES24,Aragón,1303.848,114.3,MD,More developed
+ES,ES30,Comunidad de Madrid,6219.43,135.4,MD,More developed
+ES,ES41,Castilla y León,2503.021,99.4,MD,More developed
+ES,ES42,Castilla-La Mancha,1996.794,83.3,TR,Transition
+ES,ES43,Extremadura,1079.243,71.8,LD,Less developed
+ES,ES51,Cataluña,7241.493,121,MD,More developed
+ES,ES52,Comunidad Valenciana,4931.554,93.4,MD,More developed
+ES,ES53,Illes Balears,1054.203,111.3,MD,More developed
+ES,ES61,Andalucía,8090.63,79.9,TR,Transition
+ES,ES62,Región de Murcia,1425.041,87.2,TR,Transition
+ES,ES63,Ciudad Autónoma de Ceuta,72.317,93.8,MD,More developed
+ES,ES64,Ciudad Autónoma de Melilla,69.264,88.4,TR,Transition
+ES,ES70,Canarias,2055.487,89.4,TR,Transition
+FR,FR10,Île de France,11687.711,175.3,MD,More developed
+FR,FR21,Champagne-Ardenne,1336.053,95,MD,More developed
+FR,FR22,Picardie,1906.648,82.9,TR,Transition
+FR,FR23,Haute-Normandie,1826.038,93.7,MD,More developed
+FR,FR24,Centre,2533.537,91.1,MD,More developed
+FR,FR25,Basse-Normandie,1467.959,84.2,TR,Transition
+FR,FR26,Bourgogne,1638.172,92,MD,More developed
+FR,FR30,Nord - Pas-de-Calais,4021.149,87.7,TR,Transition
+FR,FR41,Lorraine,2344.671,84.7,TR,Transition
+FR,FR42,Alsace,1840.695,101.1,MD,More developed
+FR,FR43,Franche-Comté,1165.174,86.4,TR,Transition
+FR,FR51,Pays de la Loire,3521.502,96.6,MD,More developed
+FR,FR52,Bretagne,3157.76,90.4,MD,More developed
+FR,FR53,Poitou-Charentes,1756.421,85.9,TR,Transition
+FR,FR61,Aquitaine,3187.073,94.6,MD,More developed
+FR,FR62,Midi-Pyrénées,2848.979,95.3,MD,More developed
+FR,FR63,Limousin,741.474,83,TR,Transition
+FR,FR71,Rhône-Alpes,6136.314,108.9,MD,More developed
+FR,FR72,Auvergne,1341.382,86.9,TR,Transition
+FR,FR81,Languedoc-Roussillon,2594.493,84.9,TR,Transition
+FR,FR82,Provence-Alpes-Côte d'Azur,4899.858,99.6,MD,More developed
+FR,FR83,Corse,304.784,86.8,TR,Transition
+FR,FR91,Guadeloupe,448.016,65.6,LD,Less developed
+FR,FR92,Martinique,398.084,71.6,LD,Less developed
+FR,FR93,Guyane,222.375,51.1,LD,Less developed
+FR,FR94,Réunion,813.823,65.4,LD,Less developed
+IT,ITC1,Piemonte,4411.1,113.4,MD,More developed
+IT,ITC2,Valle d'Aosta/Vallée d'Aoste,126.467,131.4,MD,More developed
+IT,ITC3,Liguria,1612.267,110.9,MD,More developed
+IT,ITC4,Lombardia,9690.333,133.8,MD,More developed
+IT,ITD1,Provincia Autonoma Bolzano/Bozen,496.1,145,MD,More developed
+IT,ITD2,Provincia Autonoma Trento,516.367,123.7,MD,More developed
+IT,ITD3,Veneto,4853.6,121,MD,More developed
+IT,ITD4,Friuli-Venezia Giulia,1225.433,118.5,MD,More developed
+IT,ITD5,Emilia-Romagna,4304.7,129.1,MD,More developed
+IT,ITE1,Toscana,3689.667,112.6,MD,More developed
+IT,ITE2,Umbria,888.5,97.8,MD,More developed
+IT,ITE3,Marche,1559.833,105.6,MD,More developed
+IT,ITE4,Lazio,5591.833,121,MD,More developed
+IT,ITF1,Abruzzo,1327.667,86.6,TR,Transition
+IT,ITF2,Molise,320.6,83.6,TR,Transition
+IT,ITF3,Campania,5810.633,66.5,LD,Less developed
+IT,ITF4,Puglia,4077.733,68.4,LD,Less developed
+IT,ITF5,Basilicata,590.567,74.5,LD,Less developed
+IT,ITF6,Calabria,2006.7,66.9,LD,Less developed
+IT,ITG1,Sicilia,5032.467,68.1,LD,Less developed
+IT,ITG2,Sardegna,1667.5,79.1,TR,Transition
+CY,CY00,Κύπρος / Kypros,792.4,97,MD,More developed
+LV,LV00,Latvija,2265.667,54.3,LD,Less developed
+LT,LT00,Lietuva,3357.7,58.6,LD,Less developed
+LU,LU00,Luxembourg (Grand-Duché),488.4,273.4,MD,More developed
+HU,HU10,Közép-Magyarország,2911.625,105.1,MD,More developed
+HU,HU21,Közép-Dunántúl,1103.676,56.3,LD,Less developed
+HU,HU22,Nyugat-Dunántúl,998.001,60.9,LD,Less developed
+HU,HU23,Dél-Dunántúl,956.967,43.4,LD,Less developed
+HU,HU31,Észak-Magyarország,1230.073,39.6,LD,Less developed
+HU,HU32,Észak-Alföld,1508.446,40.3,LD,Less developed
+HU,HU33,Dél-Alföld,1330.085,42.2,LD,Less developed
+MT,MT00,Malta,411.713,78.7,TR,Transition
+NL,NL11,Groningen,574.17,175.5,MD,More developed
+NL,NL12,Friesland (NL),644.151,107,MD,More developed
+NL,NL13,Drenthe,488.528,102.6,MD,More developed
+NL,NL21,Overijssel,1122.681,114.4,MD,More developed
+NL,NL22,Gelderland,1987.103,112.3,MD,More developed
+NL,NL23,Flevoland,381.225,99.2,MD,More developed
+NL,NL31,Utrecht,1205.658,155.5,MD,More developed
+NL,NL32,Noord-Holland,2637.252,150.2,MD,More developed
+NL,NL33,Zuid-Holland,3473.348,134.3,MD,More developed
+NL,NL34,Zeeland,380.892,122.6,MD,More developed
+NL,NL41,Noord-Brabant,2429.644,132.2,MD,More developed
+NL,NL42,Limburg (NL),1123.681,117.1,MD,More developed
+AT,AT11,Burgenland (A),282.085,82.8,TR,Transition
+AT,AT12,Niederösterreich,1600.276,102.3,MD,More developed
+AT,AT13,Wien,1680.019,160.9,MD,More developed
+AT,AT21,Kärnten,560.251,105,MD,More developed
+AT,AT22,Steiermark,1205.855,108.3,MD,More developed
+AT,AT31,Oberösterreich,1408.566,123.6,MD,More developed
+AT,AT32,Salzburg,528.053,142.6,MD,More developed
+AT,AT33,Tirol,701.744,129.8,MD,More developed
+AT,AT34,Vorarlberg,366.664,131,MD,More developed
+PL,PL11,Łódzkie,2552.67,52.7,LD,Less developed
+PL,PL12,Mazowieckie,5195.766,91.1,MD,More developed
+PL,PL21,Małopolskie,3283.262,49.2,LD,Less developed
+PL,PL22,Śląskie,4651.391,61.2,LD,Less developed
+PL,PL31,Lubelskie,2164.072,38.9,LD,Less developed
+PL,PL32,Podkarpackie,2098.31,39.1,LD,Less developed
+PL,PL33,Świętokrzyskie,1274.108,44.7,LD,Less developed
+PL,PL34,Podlaskie,1192.425,42,LD,Less developed
+PL,PL41,Wielkopolskie,3392.198,60,LD,Less developed
+PL,PL42,Zachodniopomorskie,1692.8,50.8,LD,Less developed
+PL,PL43,Lubuskie,1008.91,49.3,LD,Less developed
+PL,PL51,Dolnośląskie,2877.737,61.9,LD,Less developed
+PL,PL52,Opolskie,1035.333,47.3,LD,Less developed
+PL,PL61,Kujawsko-Pomorskie,2066.918,49.1,LD,Less developed
+PL,PL62,Warmińsko-Mazurskie,1426.89,42.2,LD,Less developed
+PL,PL63,Pomorskie,2215.542,55.3,LD,Less developed
+PT,PT11,Norte,3745.211,62.8,LD,Less developed
+PT,PT15,Algarve,428.082,86.1,TR,Transition
+PT,PT16,Centro (P),2384.225,65.3,LD,Less developed
+PT,PT17,Lisboa,2813.465,110.7,MD,More developed
+PT,PT18,Alentejo,758.949,72.3,LD,Less developed
+PT,PT20,Região Autónoma dos Açores,244.327,73.2,LD,Less developed
+PT,PT30,Região Autónoma da Madeira,246.818,103,MD,More developed
+RO,RO11,Nord-Vest,2722.091,41.7,LD,Less developed
+RO,RO12,Centru,2523.968,44,LD,Less developed
+RO,RO21,Nord-Est,3719.931,28.3,LD,Less developed
+RO,RO22,Sud-Est,2820.916,36.3,LD,Less developed
+RO,RO31,Sud - Muntenia,3285.511,37.6,LD,Less developed
+RO,RO32,Bucureşti - Ilfov,2243.5,106.6,MD,More developed
+RO,RO41,Sud-Vest Oltenia,2264.229,34.4,LD,Less developed
+RO,RO42,Vest,1923.84,50.3,LD,Less developed
+SI,SI01,Vzhodna Slovenija,1082.489,73.3,LD,Less developed
+SI,SI02,Zahodna Slovenija,945.011,106.6,MD,More developed
+SK,SK01,Bratislavský kraj,614.063,168.5,MD,More developed
+SK,SK02,Západné Slovensko,1864.445,68,LD,Less developed
+SK,SK03,Stredné Slovensko,1350.152,56.9,LD,Less developed
+SK,SK04,Východné Slovensko,1578.07,48.8,LD,Less developed
+FI,FI13,Itä-Suomi,656,87.8,MD,More developed
+FI,FI18,Etelä-Suomi,2643,134.2,MD,More developed
+FI,FI19,Länsi-Suomi,1347,105,MD,More developed
+FI,FI1A,Pohjois-Suomi,640.333,100.4,MD,More developed
+FI,FI20,Åland,27.333,151.1,MD,More developed
+SE,SE11,Stockholm,1966.442,170.7,MD,More developed
+SE,SE12,Östra Mellansverige,1540.674,104.9,MD,More developed
+SE,SE21,Småland med öarna,806.67,108.9,MD,More developed
+SE,SE22,Sydsverige,1359.469,108,MD,More developed
+SE,SE23,Västsverige,1845.696,116.7,MD,More developed
+SE,SE31,Norra Mellansverige,825.195,104.8,MD,More developed
+SE,SE32,Mellersta Norrland,370.336,111.4,MD,More developed
+SE,SE33,Övre Norrland,508.185,113.3,MD,More developed
+UK,UKC1,Tees Valley and Durham,1162.963,78.5,TR,Transition
+UK,UKC2,Northumberland and Tyne and Wear,1408.82,90.5,MD,More developed
+UK,UKD1,Cumbria,495.901,89.5,TR,Transition
+UK,UKD2,Cheshire,1003.168,117.1,MD,More developed
+UK,UKD3,Greater Manchester,2582.115,98.4,MD,More developed
+UK,UKD4,Lancashire,1446.164,84.9,TR,Transition
+UK,UKD5,Merseyside,1351.223,80.2,TR,Transition
+UK,UKE1,East Yorkshire and Northern Lincolnshire,914.255,85.8,TR,Transition
+UK,UKE2,North Yorkshire,788.85,96.3,MD,More developed
+UK,UKE3,South Yorkshire,1308.281,84.5,TR,Transition
+UK,UKE4,West Yorkshire,2207.729,98.1,MD,More developed
+UK,UKF1,Derbyshire and Nottinghamshire,2070.226,95.2,MD,More developed
+UK,UKF2,"Leicestershire, Rutland and Northamptonshire",1660.623,107.8,MD,More developed
+UK,UKF3,Lincolnshire,695.039,79.8,TR,Transition
+UK,UKG1,"Herefordshire, Worcestershire and Warwickshire",1266.378,95.1,MD,More developed
+UK,UKG2,Shropshire and Staffordshire,1517.586,83.9,TR,Transition
+UK,UKG3,West Midlands,2621.996,97.4,MD,More developed
+UK,UKH1,East Anglia,2325.888,102.3,MD,More developed
+UK,UKH2,Bedfordshire and Hertfordshire,1681.983,119.9,MD,More developed
+UK,UKH3,Essex,1703.03,92.7,MD,More developed
+UK,UKI1,Inner London,3031.528,327,MD,More developed
+UK,UKI2,Outer London,4643.187,99.2,MD,More developed
+UK,UKJ1,"Berkshire, Buckinghamshire and Oxfordshire",2202.038,146.7,MD,More developed
+UK,UKJ2,"Surrey, East and West Sussex",2654.163,116.2,MD,More developed
+UK,UKJ3,Hampshire and Isle of Wight,1856.05,111,MD,More developed
+UK,UKJ4,Kent,1654.333,92.5,MD,More developed
+UK,UKK1,"Gloucestershire, Wiltshire and Bristol/Bath area",2306.815,117.4,MD,More developed
+UK,UKK2,Dorset and Somerset,1233.289,94,MD,More developed
+UK,UKK3,Cornwall and Isles of Scilly,531.118,73.2,LD,Less developed
+UK,UKK4,Devon,1135.49,88.1,TR,Transition
+UK,UKL1,West Wales and The Valleys,1892.416,70.1,LD,Less developed
+UK,UKL2,East Wales,1096.101,102.7,MD,More developed
+UK,UKM2,Eastern Scotland,1979.328,111.5,MD,More developed
+UK,UKM3,South Western Scotland,2291.409,101.3,MD,More developed
+UK,UKM5,North Eastern Scotland,452.534,153.9,MD,More developed
+UK,UKM6,Highlands and Islands,445.633,84.1,TR,Transition
+UK,UKN0,Northern Ireland,1774.35,86.4,TR,Transition
+HR,HR03,Jadranska Hrvatska,1466.297,60.4,LD,Less developed
+HR,HR04,Kontinentalna Hrvatska,2966.893,63,LD,Less developed

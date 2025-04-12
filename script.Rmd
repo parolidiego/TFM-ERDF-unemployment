@@ -1,0 +1,546 @@
+---
+title: "TFM"
+output: html_document
+date: "2025-03-23"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(tidyverse)
+library(readxl)
+library(DataExplorer)
+```
+
+```{r}
+funds <- read_csv("funds.csv")
+funds <- funds |> 
+  filter(Fund == "ERDF") |> 
+  select(Country, NUTS2_ID, NUTS2_name, Year, Programming_Period, Modelled_annual_expenditure) |> 
+  rename(Budget_Cycle = Programming_Period,
+         Expenditure = Modelled_annual_expenditure)
+# Remember NUTS 2013
+
+funds <- funds |> 
+  pivot_wider(names_from = Budget_Cycle, values_from = Expenditure,
+              names_glue = "expenditure_{Budget_Cycle}_budget") |> 
+  arrange(NUTS2_ID, Year) %>% 
+  mutate(across(starts_with("expenditure"), ~ ifelse(.x == 0, NA, .x)))
+```
+
+```{r}
+# Data from... to...
+min(funds$Year)
+max(funds$Year)
+```
+
+```{r}
+# There are some discrepancies, each NUTS2_ID should have its corresponding name
+length(unique(funds$NUTS2_ID))
+length(unique(funds$NUTS2_name))
+
+# Count the pairs and understand which are the NUTS2_names that are duplicates
+counted <- funds |> group_by(NUTS2_ID, NUTS2_name) |> count() |> ungroup()
+duplicates <- counted |>  count(NUTS2_name) |> filter(n>1)
+duplicates
+
+dup <- funds |> filter(NUTS2_name == "Dytiki Ellada")
+unique(dup$NUTS2_ID)
+unique(dup$NUTS2_name)
+# EL23 NUTS2_code does not exist (it is probably an error which must be turn into EL63)
+
+dup <- funds |> filter(NUTS2_name == "Dytiki Makedonia")
+unique(dup$NUTS2_ID)
+unique(dup$NUTS2_name)
+dup
+# EL13 NUTS2_code does not exist (it is probably an error which must be turn into EL53)
+
+dup <- funds |> filter(NUTS2_name == "Ionia Nisia")
+unique(dup$NUTS2_ID)
+unique(dup$NUTS2_name)
+# EL22 NUTS2_code does not exist (it is probably an error which must be turn into EL62)
+
+dup <- funds |> filter(NUTS2_name == "Ipeiros")
+unique(dup$NUTS2_ID)
+unique(dup$NUTS2_name)
+# EL21 NUTS2_code does not exist (it is probably an error which must be turn into EL54)
+
+dup <- funds |> filter(NUTS2_name == "Kentriki Makedonia")
+unique(dup$NUTS2_ID)
+unique(dup$NUTS2_name)
+# EL12 NUTS2_code does not exist (it is probably an error which must be turn into EL52)
+
+dup <- funds |> filter(NUTS2_name == "Peloponnisos")
+unique(dup$NUTS2_ID)
+unique(dup$NUTS2_name)
+# EL25 NUTS2_code does not exist (it is probably an error which must be turn into EL65)
+
+dup <- funds |> filter(NUTS2_name == "Sterea Ellada")
+unique(dup$NUTS2_ID)
+unique(dup$NUTS2_name)
+# EL24 NUTS2_code does not exist (it is probably an error which must be turn into EL64)
+
+dup <- funds |> filter(NUTS2_name == "Thessalia")
+unique(dup$NUTS2_ID)
+unique(dup$NUTS2_name)
+# EL14 NUTS2_code does not exist (it is probably an error which must be turn into EL61)
+
+dup <- funds |> filter(NUTS2_name == "Zahodna Slovenija")
+unique(dup$NUTS2_ID)
+unique(dup$NUTS2_name)
+# SI03 NUTS2_name must be changed to Vzhodna Slovenija from Zahodna Slovenija
+# SI04 NUTS2_name should remain Zahodna Slovenija
+# SI01 must be changed to SI03
+# SI02 must be changed to SI04
+
+
+funds <- funds |> 
+  # Greece
+  mutate(NUTS2_ID = case_when(
+    NUTS2_ID == "EL23" ~ "EL63",
+    NUTS2_ID == "EL13" ~ "EL53",
+    NUTS2_ID == "EL22" ~ "EL62",
+    NUTS2_ID == "EL21" ~ "EL54",
+    NUTS2_ID == "EL12" ~ "EL52",
+    NUTS2_ID == "EL25" ~ "EL65",
+    NUTS2_ID == "EL24" ~ "EL64",
+    NUTS2_ID == "EL14" ~ "EL61",
+    TRUE ~ NUTS2_ID
+  )) |> 
+  # Slovenia
+  mutate(NUTS2_ID = case_when(
+    NUTS2_ID == "SI01" ~ "SI03",
+    NUTS2_ID == "SI02" ~ "SI04",
+    TRUE ~ NUTS2_ID
+  )) |> 
+  mutate(NUTS2_name = case_when(
+    NUTS2_ID == "SI03" ~ "Vzhodna Slovenija",
+    NUTS2_ID == "SI04" ~ "Zahodna Slovenija",
+    TRUE ~ NUTS2_name
+  ))
+
+counted <- funds |> group_by(NUTS2_ID, NUTS2_name) |> count() |> ungroup()
+duplicates <- counted |>  count(NUTS2_name) |> filter(n>1)
+duplicates
+```
+
+Now I have to make sure that each row is a region in a particular year, i.e. each region should only have one row per year. 
+
+Note that for those regions which had some problems above I definetely will have to collapse some rows together. 
+
+```{r}
+duplicates <- funds |> group_by(NUTS2_ID, NUTS2_name, Year) |> 
+  count() |> 
+  ungroup() |> 
+  filter(n>1)
+# Only the ones that needed help before are duplicates
+
+funds |> 
+  filter(NUTS2_ID %in% duplicates$NUTS2_ID & Year %in% duplicates$Year) |> 
+  arrange(NUTS2_ID, Year)
+# No need to do anything special because there is no overlapping of data, just need to collapse all the data in one row
+
+
+funds <- funds |> 
+  summarise(across(starts_with("expenditure"), ~ sum(.x, na.rm = TRUE)), 
+            .by = c(Country, NUTS2_ID, NUTS2_name, Year)) |> 
+  mutate(across(starts_with("expenditure"), ~ ifelse(.x == 0, NA, .x)))
+```
+
+
+```{r}
+NUTS13_16 <- read_excel("NUTS2013-NUTS2016.xlsx", 
+                        sheet = "NUTS2013-NUTS2016", range = "B2:I1868")
+NUTS_2013 <- NUTS13_16 |> 
+  filter(level==2) |> 
+  drop_na(`Code 2013`) |> 
+  select(`Code 2013`, `NUTS level 2`)
+
+nuts_funded <- unique(funds$NUTS2_ID)
+all_nuts <- unique(NUTS_2013$`Code 2013`)
+all_nuts |> setdiff(nuts_funded) 
+# ZZ plus, Guadalupe, Martinique, Guyane, La Reunion, Mayotte and... 
+# ...London (seems like funds use 2010 NUTS code instead of 2013)
+
+# removing the only ZZ present in funds
+funds <- funds |> 
+  filter(!NUTS2_ID == "UKZZ")
+```
+
+
+```{r}
+unemployment_raw <- read_csv("unemployment.csv")
+
+unemployment <- unemployment_raw |> 
+  select(geo, TIME_PERIOD, OBS_VALUE)
+
+min(unemployment$TIME_PERIOD)
+max(unemployment$TIME_PERIOD)
+
+unemployment <- unemployment |> 
+  separate_wider_delim(cols = geo, delim = ":", names = c("NUTS2_ID", "NUTS2_name")) |> 
+  rename(Year = TIME_PERIOD,
+         Unemployment = OBS_VALUE)
+```
+
+
+```{r}
+unique(unemployment$NUTS2_ID) |> setdiff(nuts_funded)
+# Starts with FR is due to France relabelling
+# HR, HU, IE, LT, PL, SI, UK are all EU
+# Starts with CH | IS | ME | MK | NO | RS | TR can be deleted
+unemployment <- unemployment |> 
+  filter(!grepl("^(CH|IS|ME|MK|NO|RS|TR)", NUTS2_ID))
+
+# Mainly regions that have probably changed nuts label
+unique(unemployment$NUTS2_ID) |> setdiff(nuts_funded)
+```
+
+
+```{r}
+data <- funds |> 
+  left_join(unemployment, by = c("NUTS2_ID", "Year")) |> 
+  filter(Year >= 1999 & Year <= 2022) |> 
+  select(-`expenditure_1989-1993_budget`)
+
+# names are all the same it is worth not carrying them forward if possible to trace them back using nuts data
+check <- data |> 
+  mutate(name_check_equal = ifelse(NUTS2_name.x == NUTS2_name.y, TRUE, FALSE)) |> 
+  filter(name_check_equal==FALSE)
+```
+
+```{r}
+gdp_raw <- read_csv("gdp.csv")
+gdp <- gdp_raw |> 
+  filter(unit == "Purchasing power standard (PPS, EU27 from 2020), per inhabitant")
+
+gdp <- gdp |> 
+  select(geo, TIME_PERIOD, OBS_VALUE) |> 
+  rename(NUTS2_name = geo,
+         Year = TIME_PERIOD,
+         GDP = OBS_VALUE)
+
+min(gdp$Year)
+max(gdp$Year)
+
+data <- data |> 
+  left_join(gdp, by = c("NUTS2_name.y" = "NUTS2_name", "Year" = "Year")) |> 
+  filter(Year >= 2000 & Year <= 2022)
+```
+
+
+```{r}
+population_raw <- read_csv("population.csv")
+
+population <- population_raw |> 
+  select(geo, TIME_PERIOD, OBS_VALUE)
+
+min(population$TIME_PERIOD)
+max(population$TIME_PERIOD)
+
+population <- population |> 
+  separate_wider_delim(cols = geo, delim = ":", names = c("NUTS2_ID", "NUTS2_name")) |> 
+  rename(Year = TIME_PERIOD,
+         Population = OBS_VALUE)
+
+unique(population$NUTS2_ID) |> setdiff(nuts_funded)
+# Starts with FR is due to France relabelling
+# HR, HU, IE, LT, NL, PL, PT, SI, UK are all EU
+# Starts with AL | CH | IS | LI | ME | MK | NO | RS | TR can be deleted
+population <- population |> 
+  filter(!grepl("^(AL|CH|IS|LI|ME|MK|NO|RS|TR)", NUTS2_ID))
+
+# Mainly regions that have probably changed nuts label
+unique(population$NUTS2_ID) |> setdiff(nuts_funded)
+
+data <- data |> 
+  left_join(population, by = c("NUTS2_ID", "Year")) |> 
+  filter(Year >= 2000 & Year <= 2022) 
+```
+
+
+```{r}
+education_raw <- read_csv("education.csv")
+
+education <- education_raw |> 
+  select(geo, TIME_PERIOD, OBS_VALUE) |> 
+  rename(NUTS2_name = geo,
+         Year = TIME_PERIOD,
+         Education = OBS_VALUE)
+
+min(education$Year)
+max(education$Year)
+
+data <- data |> 
+  left_join(education, by = c("NUTS2_name.y" = "NUTS2_name", "Year" = "Year")) |> 
+  filter(Year >= 2000 & Year <= 2022)
+```
+
+```{r}
+gfcf_raw <- read_csv("gfcf.csv")
+gfcf <- gfcf_raw |> 
+  filter(currency == "Million euro")
+
+gfcf <- gfcf |> 
+  select(geo, TIME_PERIOD, OBS_VALUE) |> 
+  rename(NUTS2_name = geo,
+         Year = TIME_PERIOD,
+         GFCF = OBS_VALUE)
+
+min(gfcf$Year)
+max(gfcf$Year)
+
+data <- data |> 
+  left_join(gfcf, by = c("NUTS2_name.y" = "NUTS2_name", "Year" = "Year")) |> 
+  filter(Year >= 2000 & Year <= 2022)
+```
+
+Getting ready for regressions
+
+```{r}
+data <- data |> 
+  select(-c(NUTS2_name.y, NUTS2_name)) |>
+  rename(NUTS2_name = NUTS2_name.x)
+
+data <- data |> 
+  filter(!is.na(Unemployment) & 
+         !is.na(GDP) & 
+         !is.na(Population) & 
+         !is.na(Education) & 
+         !is.na(GFCF))
+
+# vars_to_gr <- c("expenditure_1994-1999_budget",
+#                 "expenditure_2000-2006_budget",
+#                 "expenditure_2007-2013_budget",
+#                 "expenditure_2014-2020_budget",
+#                 "Unemployment", "GDP", "Population", "Education", "GFCF")
+
+data_gr <- data |> 
+  arrange(NUTS2_ID, Year) |> 
+  group_by(NUTS2_ID) |> 
+  mutate(
+    Year_lag = lag(Year),
+    across(Unemployment,
+           ~ if_else(Year_lag == Year - 1,
+                     (. - lag(.)) / lag(.) * 100,
+                     NA),
+           .names = "{.col}_YoY_change")) |> 
+  select(-Year_lag) |> 
+  ungroup()
+
+data_gr <- data_gr |> 
+  select(-Unemployment)
+
+data_gr <- data_gr |> 
+   mutate(tot_exp = if_else(
+    rowSums(!is.na(across(starts_with("expenditure")))) == 0,
+    NA,
+    rowSums(across(starts_with("expenditure")), na.rm = TRUE)
+  ))
+
+data_gr <- data_gr |>
+  filter(!is.na(Unemployment_YoY_change) & 
+         # !is.na(GDP_YoY_change) & 
+         # !is.na(Population_YoY_change) & 
+         # !is.na(Education_YoY_change) & 
+         # !is.na(GFCF_YoY_change) &
+         !is.na(tot_exp))
+
+data_gr <- data_gr |>
+  select(-tot_exp)
+
+# Expenditure per capita
+data_gr <- data_gr |> 
+  mutate(across(starts_with("expenditure"), ~ .x/Population))
+```
+
+Regressions
+
+```{r}
+dim(data)
+dim(data_gr)
+
+plot_missing(data)
+plot_missing(data_gr)
+```
+
+```{r}
+list_data_gr <- split(data_gr, data_gr$Year)
+
+# How many regions per year
+lapply(list_data_gr, dim)
+# 2004: Cyprus, Czech Republic, Estonia, Hungary, Latvia, Lithuania, Malta, Poland, Slovakia, and Slovenia
+# 2007: Bulgaria and Romania
+# 2013: Croatia
+
+#  Removing columns with all NAs (i.e. Keeping only the relevant budget cycle columns for each year)
+list_data_gr_cleaned <- map(list_data_gr, ~ .x[, colSums(!is.na(.x)) > 0])
+lapply(list_data_gr_cleaned, dim)
+
+# Keeping only the numeric variables for regression and turning NAs in expenditure into 0 (is this right?)
+list_data_gr_cleaned <- map(list_data_gr_cleaned, ~ 
+  .x |> 
+    select(where(is.numeric)) |> 
+    select(-Year) |> 
+    mutate(across(everything(), ~ replace_na(.x, 0)))
+)
+```
+
+
+```{r}
+list_data <- split(data, data$Year)
+
+# How many regions per year
+lapply(list_data, dim)
+# 2004: Cyprus, Czech Republic, Estonia, Hungary, Latvia, Lithuania, Malta, Poland, Slovakia, and Slovenia
+# 2007: Bulgaria and Romania
+# 2013: Croatia
+
+#  Removing columns with all NAs (i.e. Keeping only the relevant budget cycle columns for each year)
+list_data_cleaned <- map(list_data, ~ .x[, colSums(!is.na(.x)) > 0])
+lapply(list_data_cleaned, dim)
+
+# Keeping only the numeric variables for regression and turning NAs in expenditure into 0 (is this right?)
+list_data_cleaned <- map(list_data_cleaned, ~ 
+  .x |> 
+    select(where(is.numeric)) |> 
+    select(-Year) |> 
+    mutate(across(everything(), ~ replace_na(.x, 0)))
+)
+```
+
+
+# Regression
+
+## Growth rates
+
+```{r}
+regression <- map(list_data_gr_cleaned, ~ lm(Unemployment_YoY_change ~ ., data = .x))
+
+r_squared_values <- map_dbl(regression, ~ summary(.x)$r.squared)
+
+tibble_results_gr <- tibble(
+  year = names(r_squared_values),
+  r_squared = as.numeric(r_squared_values)
+)
+
+coef_df_gr <- map_dfr(
+  regression,
+  ~ broom::tidy(.x), 
+  .id = "year"
+)
+
+coef_df_gr <- coef_df_gr |> 
+  mutate(across(where(is.numeric), ~ round(.x, 4)))
+
+coefficients_gr <- coef_df_gr |> 
+  select(year, term, estimate) |>
+  pivot_wider(names_from = term, values_from = estimate)
+  
+tibble_results_gr <- tibble_results_gr |> 
+  left_join(coefficients_gr, by = "year") |> 
+  relocate("(Intercept)", .after = last_col()) |>
+  relocate(
+    "`expenditure_2007-2013_budget`",
+    .after = "`expenditure_2000-2006_budget`"
+  ) |>
+  relocate(
+    "`expenditure_2014-2020_budget`",
+    .after = "`expenditure_2007-2013_budget`"
+  )
+```
+
+## Absolute values
+
+```{r}
+regression <- map(list_data_cleaned, ~ lm(Unemployment ~ ., data = .x))
+
+r_squared_values <- map_dbl(regression, ~ summary(.x)$r.squared)
+
+tibble_results <- tibble(
+  year = names(r_squared_values),
+  r_squared = as.numeric(r_squared_values)
+)
+
+coef_df <- map_dfr(
+  regression,
+  ~ broom::tidy(.x), 
+  .id = "year"
+)
+
+# coef_df <- coef_df |> 
+#   mutate(across(where(is.numeric), ~ round(.x, 4)))
+
+coefficients <- coef_df |> 
+  select(year, term, estimate) |>
+  pivot_wider(names_from = term, values_from = estimate)
+
+#options("scipen" = 999)
+
+tibble_results <- tibble_results |> 
+  left_join(coefficients, by = "year") |> 
+  relocate("(Intercept)", .after = last_col()) |>
+  relocate(
+    "`expenditure_2007-2013_budget`",
+    .after = "`expenditure_2000-2006_budget`"
+  ) |>
+  relocate(
+    "`expenditure_2014-2020_budget`",
+    .after = "`expenditure_2007-2013_budget`"
+  )
+```
+
+```{r}
+# Run a model just with the control and check whether variables are significant and the R2 of this simple model, check also the residuals
+
+# Take out population to see if the model improves
+
+# If you have a good model include one by one threshold info and expenditure
+
+
+# Also try to run model only with expenditure to check if they have the correct sign and whether they are insignificant (in the case they do not have the correct sign)
+
+
+
+# Lastly make changes to the growth rates model
+# Maybe keep only dependent variable as growth the other ones as absolute
+
+# Try to use the lag version of the independent
+
+# Try to modify expenditure as amount of expenditure per 10k population
+```
+
+
+
+# Check amount of funds
+
+```{r}
+rc_2007_2013 <- read_csv("Eligible_regions_2007-2013_20250408.csv")
+
+boh <- funds |> 
+  left_join(rc_2007_2013, by = c("NUTS2_ID" = "nuts_id"))
+
+boh <- boh |> 
+  select(NUTS2_ID, objective_code, Year, "expenditure_2007-2013_budget")
+
+boh <- boh |> 
+  filter(Year >= 2007 & Year <= 2015)
+
+boh |> summarise(sum(`expenditure_2007-2013_budget`, na.rm = TRUE), .by = objective_code)
+
+rc_2014_2020 <- read_csv("Regions_by_cohesion_policy_category_2014-2020_20250408.csv")
+
+boh <- funds |> 
+  left_join(rc_2014_2020, by = c("NUTS2_ID" = "nuts_id"))
+
+boh <- boh |> 
+  select(NUTS2_ID, catg_name, Year, "expenditure_2014-2020_budget")
+
+boh <- boh |> 
+  filter(Year >= 2014 & Year <= 2022)
+
+boh |> summarise(sum(`expenditure_2014-2020_budget`, na.rm = TRUE), .by = catg_name)
+```
+
