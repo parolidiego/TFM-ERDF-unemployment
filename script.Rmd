@@ -23,39 +23,53 @@ library(DataExplorer)
 
 ```{r}
 funds <- read_csv("funds.csv")
-funds <- funds |> 
+
+funds <- funds |>
+  # Selecting only ERDF data
   filter(Fund == "ERDF") |> 
-  select(Country, NUTS2_ID, NUTS2_name, Year, Programming_Period, Modelled_annual_expenditure) |> 
+  # Selecting only relevant variables
+  select(Country, NUTS2_ID, NUTS2_name, Year, 
+         Programming_Period, Modelled_annual_expenditure) |> 
   rename(Budget_Cycle = Programming_Period,
          Expenditure = Modelled_annual_expenditure)
-# Remember NUTS 2013
 ```
+
+As per source this expenditure data uses NUTS 2013 codes
 
 ## Cleaning
 
 ```{r}
 funds <- funds |> 
+  # Pivoting wider to obtain 1 column per budget period
   pivot_wider(names_from = Budget_Cycle, values_from = Expenditure,
               names_glue = "expenditure_{Budget_Cycle}_budget") |> 
   arrange(NUTS2_ID, Year) 
 
+# Getting rid of years before 1989 as the budget periods covered start in 1989
 funds <- funds |> 
   filter(Year >= 1989)
 ```
 
-...
+Checking that the NUTS codes used in the expenditure data are in line with the official 2013 NUTS codes
 
 ```{r}
+# Loading the NUTS code (changes from 2013 to 2016 codes)
 NUTS13_16 <- read_excel("NUTS2013-NUTS2016.xlsx", 
                         sheet = "NUTS2013-NUTS2016", range = "B2:I1868")
-# NUTS10_13 <- read_excel("NUTS 2010 - NUTS 2013.xls", 
+
+# # Optionally loading NUTS codes using changes from 2010 to 2013 (just to check coherence with 13-16 data)
+# NUTS10_13 <- read_excel("NUTS 2010 - NUTS 2013.xls",
 #                         sheet = "NUTS2010-NUTS2013", range = "B2:L1918")
 
 NUTS_2013 <- NUTS13_16 |> 
+  # Selecting only level 2 regions
   filter(level==2) |> 
+  # Keeping only regions with a 2013 NUTS code
   drop_na(`Code 2013`) |> 
+  # Selecting only relevant variables
   select(`Code 2013`, `NUTS level 2`)
 
+# Storing all NUTS used in the expenditure data and in the 2013 official codes
 nuts_funded <- unique(funds$NUTS2_ID) 
 all_nuts <- unique(NUTS_2013$`Code 2013`)
 
@@ -63,7 +77,7 @@ all_nuts <- unique(NUTS_2013$`Code 2013`)
 setdiff(nuts_funded, all_nuts)
 ```
 
-Fixing those codes
+Fixing those codes (they are primarily due to ...)
 
 ```{r}
 funds <- funds |> 
@@ -101,10 +115,12 @@ funds <- funds |>
 #Checking
 nuts_funded <- unique(funds$NUTS2_ID) 
 all_nuts <- unique(NUTS_2013$`Code 2013`)
-
 setdiff(nuts_funded, all_nuts)
 ```
 
+The remaining NUTS codes from the `funds` dataset that are not official 2013 NUTS codes are UKI1 and UKI2, which as mentioned before are from London and cannot be fixed right now.
+
+I'll now run another check to understand which 2013 NUTS code do not appear at all in my `funds` dataset:
 
 ```{r}
 setdiff(all_nuts, nuts_funded) 
@@ -146,7 +162,7 @@ duplicates <- counted |>  count(NUTS2_name) |> filter(n>1)
 duplicates
 ```
 
-Now I have to make sure that each row is a region in a particular year, i.e. each region should only have one row per year. 
+Now I have to make sure that each row is a region in a particular year, i.e. each region should only have one row per year (no multiple rows per year). 
 
 Note that for those regions which had some problems above I definitely will have to collapse some rows together. 
 
@@ -155,10 +171,12 @@ counted |> arrange(desc(n)) |> head()
 # There are some regions that have more than 34 observations (which are the most since data spans from 1989 to 2022)
 # This is due to the changes to the nuts code I have made above
 
+# Checking which of the regions are duplicates
 duplicates <- funds |> group_by(NUTS2_ID, NUTS2_name, Year) |> 
   count() |> 
   ungroup() |> 
   filter(n>1)
+duplicates
 # Only the ones that needed help before are duplicates
 
 funds |> 
@@ -167,8 +185,10 @@ funds |>
 # No need to do anything special because there is no overlapping of data, just need to collapse all the data in one row
 
 funds <- funds |> 
+  # Summing the expenditure per year and region
   summarise(across(starts_with("expenditure"), ~ sum(.x, na.rm = TRUE)), 
             .by = c(Country, NUTS2_ID, NUTS2_name, Year)) |> 
+  # Turning all the 0s cerated by the operation above into NAs
   mutate(across(starts_with("expenditure"), ~ ifelse(.x == 0, NA, .x)))
 ```
 
@@ -192,12 +212,18 @@ funds |>
   summarise(n_regions = n_distinct(NUTS2_ID))
 ```
 
+As some regions are not there even in years where they should be (showed by the fluctuating number of regions/countries per year)
+
 ```{r}
 # Making sure all regions from the 1990 are also in 1989
+
+# Looking at the differences between the vectors of unique values
 NUTS_1989 <- funds |> filter(Year == 1989) |> pull(NUTS2_ID) |> unique()
 NUTS_1990 <- funds |> filter(Year == 1990) |> pull(NUTS2_ID) |> unique()
 missing_1989 <- setdiff(NUTS_1990, NUTS_1989)
 missing_1989
+
+# Creating appropriate data for the missing regions
 missing_1989 <- funds |> 
   filter(NUTS2_ID %in% missing_1989) |> 
   filter(Year == 1990) |> 
@@ -215,6 +241,7 @@ NUTS_1994 <- funds |> filter(Year == 1994) |> pull(NUTS2_ID) |> unique()
 missing <- setdiff(NUTS_1994, NUTS_1993)
 # This should not be there as they were not in the EU before 1995
 # This likely happens because of the modelling of the expenditure
+
 # For the countries that join the EU in 1995 I want all expenditure to be in 1995
 # Create a df storing their data
 df <- funds |>
@@ -243,6 +270,7 @@ NUTS_1994 <- funds |> filter(Year == 1994) |> pull(NUTS2_ID) |> unique()
 NUTS_1995 <- funds |> filter(Year == 1995) |> pull(NUTS2_ID) |> unique()
 missing_1994 <- setdiff(NUTS_1995, NUTS_1994)
 missing_1994
+# Only regions from the countries that joined in '95 make up the difference
 ```
 
 ```{r}
@@ -323,7 +351,7 @@ df <- funds |>
 funds <- funds |>
   filter(!(Country == "HR" & 
            Year %in% c(2007, 2008, 2009, 2010, 2011, 2012)))
-# Modifying and adding that data to the main df for year 1995
+# Modifying and adding that data to the main df for year 2013
 df <- df |> 
   mutate(Year = 2013) |> 
   select(Country, NUTS2_ID, NUTS2_name, Year, `expenditure_2007-2013_budget`) |> 
@@ -338,6 +366,8 @@ funds <- funds |>
   mutate(`expenditure_2007-2013_budget` = ifelse(`expenditure_2007-2013_budget` == 0,
                                                  NA, `expenditure_2007-2013_budget`))
 ```
+
+This is almost all, I should also check for what happens with Brexit but this will be done later on
 
 ```{r}
 # Check BREXIT
@@ -416,6 +446,7 @@ funds <- funds |>
 ```{r}
 unemployment_raw <- read_csv("unemployment.csv")
 
+# Selecting only relevant variables
 unemployment <- unemployment_raw |> 
   select(geo, TIME_PERIOD, OBS_VALUE)
 
@@ -423,6 +454,7 @@ min(unemployment$TIME_PERIOD)
 max(unemployment$TIME_PERIOD)
 
 unemployment <- unemployment |> 
+  # Separating region code and name
   separate_wider_delim(cols = geo, delim = ":", names = c("NUTS2_ID", "NUTS2_name")) |> 
   rename(Year = TIME_PERIOD,
          Unemployment = OBS_VALUE)
@@ -434,6 +466,8 @@ unique(unemployment$NUTS2_ID) |> setdiff(nuts_funded)
 # Starts with FR is due to France relabelling
 # HR, HU, IE, LT, PL, SI, UK are all EU
 # Starts with CH | IS | ME | MK | NO | RS | TR can be deleted
+
+# Deleting non-EU regions
 unemployment <- unemployment |> 
   filter(!grepl("^(CH|IS|ME|MK|NO|RS|TR)", NUTS2_ID))
 
@@ -441,12 +475,151 @@ unemployment <- unemployment |>
 unique(unemployment$NUTS2_ID) |> setdiff(nuts_funded)
 ```
 
+Is this data using 2021 nuts codes?
+
+```{r}
+NUTS16_21 <- read_excel("NUTS2021.xlsx", 
+    sheet = "NUTS & SR 2021", range = "A1:H1845")
+
+NUTS_2021 <- NUTS16_21 |> 
+  filter(`NUTS level` == 2) |> 
+  select(`Code 2021`, `NUTS level 2`) |> 
+  drop_na(`Code 2021`)
+
+nuts_data <- unique(unemployment$NUTS2_ID) 
+all_nuts <- unique(NUTS_2021$`Code 2021`)
+
+setdiff(nuts_data, all_nuts)
+# These are all regions that have been subject to changes
+
+# HR04 discontinued with NUTS2021; split into new HR02, HR05 and HR06 - last data 2015
+# HU10 discontinued with NUTS2016; split into new HU11 and HU12 - last data 2012
+# IE01 & IE02 discontinued with NUTS2016 - last data 2011
+# LT00 discontinued with NUTS2016; split into new LT01 and LT02 - last data 2012
+# SI01 & SI02 discontinued with NUTS2013 - last data 2009
+# UKI1 & UKI2 discontinued with NUTS2013 - last data 2009
+# UKM2 & UKM3 discontinued with NUTS2016 - last data 2012
+
+# Basically all the unemployment data uses nuts 2021 codes, for regions that have had some changes affecting their boundaries and thus their datapoints, data is kept for the previous region before the changes and new regions are used after the changes
+
+# To the above it must be added the following change affecting boundaries:
+# PL12 discontinued with NUTS 2016; split into new PL91 and PL92 - data for PL91 and PL92 from 2013, no old data
+
+# And the following regions just changing the code: 
+# FR24	FRB0
+# FR26	FRC1
+# FR43	FRC2
+# FR25	FRD1
+# FR23	FRD2
+# FR30	FRE1
+# FR22	FRE2
+# FR42	FRF1
+# FR21	FRF2
+# FR41	FRF3
+# FR51	FRG0
+# FR52	FRH0
+# FR61	FRI1
+# FR63	FRI2
+# FR53	FRI3
+# FR81	FRJ1
+# FR62	FRJ2
+# FR72	FRK1
+# FR71	FRK2
+# FR82	FRL0
+# FR83	FRM0
+# FRA1	FRY1
+# FRA2	FRY2
+# FRA3	FRY3
+# FRA4	FRY4
+# FRA5	FRY5
+# PL11	PL71
+# PL33	PL72
+# PL31	PL81
+# PL32	PL82
+# PL34	PL84
+```
+
+Checking now differences in NUTS code for unemployment dataset against the funds dataset. Probably all the changes mentioned above should pop up.
+
+```{r}
+nuts_unemployment <- unique(unemployment$NUTS2_ID)
+nuts_funded <- unique(funds$NUTS2_ID)
+all_nuts <- unique(NUTS_2021$`Code 2021`)
+
+setdiff(nuts_funded, all_nuts)
+# All regions subject to changes as discussed before
+setdiff(nuts_funded, nuts_unemployment)
+# All regions subject to name changes + PL12 for which no pre-change data is available
+
+setdiff(all_nuts, nuts_funded)
+# Most of the difference is due to the changes mentioned above, many can be fixed by simply changing the code of the region. The ones involving boundary shifts cannot be changed
+# The rest of the differences are ZZ territories which are not included in my analysis
+```
+
+Updating the 2013 NUTS codes from the `funds` dataset to match their new nuts code for regions in Poland and France which only underwent code changes and no boundary shift
+
+```{r}
+funds <- funds |> 
+  mutate(NUTS2_ID = case_when(
+    NUTS2_ID == "FR24" ~ "FRB0",
+    NUTS2_ID == "FR26" ~ "FRC1",
+    NUTS2_ID == "FR43" ~ "FRC2",
+    NUTS2_ID == "FR25" ~ "FRD1",
+    NUTS2_ID == "FR23" ~ "FRD2",
+    NUTS2_ID == "FR30" ~ "FRE1",
+    NUTS2_ID == "FR22" ~ "FRE2",
+    NUTS2_ID == "FR42" ~ "FRF1",
+    NUTS2_ID == "FR21" ~ "FRF2",
+    NUTS2_ID == "FR41" ~ "FRF3",
+    NUTS2_ID == "FR51" ~ "FRG0",
+    NUTS2_ID == "FR52" ~ "FRH0",
+    NUTS2_ID == "FR61" ~ "FRI1",
+    NUTS2_ID == "FR63" ~ "FRI2",
+    NUTS2_ID == "FR53" ~ "FRI3",
+    NUTS2_ID == "FR81" ~ "FRJ1",
+    NUTS2_ID == "FR62" ~ "FRJ2",
+    NUTS2_ID == "FR72" ~ "FRK1",
+    NUTS2_ID == "FR71" ~ "FRK2",
+    NUTS2_ID == "FR82" ~ "FRL0",
+    NUTS2_ID == "FR83" ~ "FRM0",
+    NUTS2_ID == "FRA1" ~ "FRY1",
+    NUTS2_ID == "FRA2" ~ "FRY2",
+    NUTS2_ID == "FRA3" ~ "FRY3",
+    NUTS2_ID == "FRA4" ~ "FRY4",
+    NUTS2_ID == "FRA5" ~ "FRY5",
+    NUTS2_ID == "PL11" ~ "PL71",
+    NUTS2_ID == "PL33" ~ "PL72",
+    NUTS2_ID == "PL31" ~ "PL81",
+    NUTS2_ID == "PL32" ~ "PL82",
+    NUTS2_ID == "PL34" ~ "PL84",
+    TRUE ~ NUTS2_ID))
+
+# Checking if everything is fine
+nuts_unemployment <- unique(unemployment$NUTS2_ID)
+nuts_funded <- unique(funds$NUTS2_ID)
+all_nuts <- unique(NUTS_2021$`Code 2021`)
+
+setdiff(nuts_funded, all_nuts)
+# Only the regions with boundary changes appear, perfect.
+
+setdiff(all_nuts, nuts_funded)
+# All the regions coming from shifts plus FRY5 which is Mayotte and for which there is no data in the funds dataset
+```
+
+All seems fine for now we can proceed with merging
 
 ```{r}
 data <- funds |> 
   left_join(unemployment, by = c("NUTS2_ID", "Year")) |> 
   filter(Year >= 1999 & Year <= 2022) |> 
   select(-`expenditure_1989-1993_budget`)
+
+funds |> 
+  anti_join(unemployment, by = c("NUTS2_ID", "Year")) |> 
+  filter(Year >= 1999)
+# Still loosing a lot of data because of pre 2010 nuts code changes
+
+# NEED TO LOOK INTO THIS LATER IF I STICK TO THIS DATA
 
 # names are all the same it is worth not carrying them forward if possible to trace them back using nuts data
 check <- data |> 
@@ -1060,4 +1233,13 @@ Looking at poverty rates instead?
 
 If you have a good model include one by one threshold info and expenditure
 
+
+# Available variables
+
+```{r}
+library(restatapi)
+toc <- search_eurostat_toc("NUTS 2")
+
+
+```
 
