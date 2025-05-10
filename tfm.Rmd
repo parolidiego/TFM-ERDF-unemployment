@@ -653,6 +653,9 @@ education <- education |>
   filter(YEAR >= 1989)
 head(education)
 
+education <- education |> 
+  filter(ISCED11 == "Tertiary education (levels 5-8)")
+
 unique(education$NUTSCODE) |> setdiff(unique(funds$NUTS2_ID))
 unique(funds$NUTS2_ID) |> setdiff(unique(education$NUTSCODE))
 # It looks like all education data is present
@@ -666,5 +669,313 @@ education <- education |>
 
 data <- data |> 
   left_join(education, by = join_by(NUTS2_ID == NUTSCODE, Year == YEAR)) |> 
-  rename(population = VALUE)
+  rename(education = VALUE)
 ```
+
+## Investment
+
+```{r}
+ardeco_get_dataset_list("ROIGT")
+
+investment <- ardeco_get_dataset_data("ROIGT", version = "2021", level = "2")
+
+investment <- investment |> 
+  filter(YEAR <= 2022) |> 
+  filter(YEAR >= 1989)
+head(investment)
+
+unique(investment$NUTSCODE) |> setdiff(unique(funds$NUTS2_ID))
+unique(funds$NUTS2_ID) |> setdiff(unique(investment$NUTSCODE))
+# It looks like all investment data is present
+```
+
+Merging investment data with expenditure data
+
+```{r}
+investment <- investment |> 
+  select(NUTSCODE, YEAR, VALUE)
+
+data <- data |> 
+  left_join(investment, by = join_by(NUTS2_ID == NUTSCODE, Year == YEAR)) |> 
+  rename(investment = VALUE)
+```
+
+## Binary - poor regions
+
+2014-2020
+
+From [decision](https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:32014D0099#ntr1-L_2014050EN.01002401-E0001)
+
+```{r}
+cat14_20 <- read_csv("cat14_20.csv")
+
+# Selecting only the least developed regions
+cat14_20 <- cat14_20 |> 
+  select(nuts_id, catg_name) |> 
+  filter(catg_name == "Less developed")
+
+# NUTS 2006 used by this categorization vs NUTS 2021 used in our dataset
+# Which of these regions is not present in the dataset due to NUTS discrepancies
+missing_regions <- anti_join(cat14_20, data, by = c("nuts_id" = "NUTS2_ID"))
+
+# Regions which I have deleted because I couldn't use their data
+deleted_regions <- c("FR91", "UKI1", "UKI2", "UKZZ", "IE01", "IE02", 
+                     "LT00", "HU10", "PL12", "UKM2", "UKM3", "HR04")
+
+# Regions that I should try to identify
+missing_regions <- missing_regions |> 
+  filter(!nuts_id %in% deleted_regions)
+missing_regions
+
+# These are all regions which have undergone only code name changes or minor reshuffling 
+cat14_20 <- cat14_20 |> 
+  mutate(nuts_id = case_when(
+    nuts_id == "GR11" ~ "EL51",
+    nuts_id == "GR12" ~ "EL52",
+    nuts_id == "GR14" ~ "EL61",
+    nuts_id == "GR21" ~ "EL54",
+    nuts_id == "GR23" ~ "EL63",
+    nuts_id == "FR92" ~ "FRY2",
+    nuts_id == "FR93" ~ "FRY3",
+    nuts_id == "FR94" ~ "FRY4",
+    nuts_id == "PL11" ~ "PL71",
+    nuts_id == "PL31" ~ "PL81",
+    nuts_id == "PL32" ~ "PL82",
+    nuts_id == "PL33" ~ "PL72",
+    nuts_id == "PL34" ~ "PL84",
+    nuts_id == "SI01" ~ "SI03",
+    TRUE ~ nuts_id
+  ))
+
+anti_join(cat14_20, data, by = c("nuts_id" = "NUTS2_ID"))
+```
+
+```{r}
+data <- data |> 
+  left_join(cat14_20, by = c("NUTS2_ID" = "nuts_id")) |> 
+  rename(poor14_20 = catg_name) |> 
+  mutate(poor14_20 = case_when(
+    Year >= 2014 & is.na(poor14_20) ~ 0,
+    Year >= 2014 & poor14_20 == "Less developed" ~ 1,
+    Year < 2014 ~ NA,
+  ))
+```
+
+2007-2013
+
+From [decision](https://eur-lex.europa.eu/legal-content/EN/ALL/?uri=CELEX%3A32006D0595) and [decision](https://eur-lex.europa.eu/legal-content/EN/ALL/?uri=CELEX%3A32007D0189)
+
+
+```{r}
+cat07_13 <- read_csv("cat07_13.csv")
+
+# Selecting only the least developed regions
+cat07_13 <- cat07_13 |> 
+  select(nuts_id, objective_code) |> 
+  filter(objective_code == "Conv")
+
+# Which of these regions is not present in the dataset due to NUTS discrepancies
+missing_regions <- anti_join(cat07_13, data, by = c("nuts_id" = "NUTS2_ID"))
+
+# Regions which I have deleted because I couldn't use their data
+deleted_regions <- c("FR91", "UKI1", "UKI2", "UKZZ", "IE01", "IE02", 
+                     "LT00", "HU10", "PL12", "UKM2", "UKM3", "HR04")
+
+# Regions that I should try to identify
+missing_regions <- missing_regions |> 
+  filter(!nuts_id %in% deleted_regions)
+missing_regions
+
+# These are all regions which have undergone only code name changes or minor reshuffling 
+cat07_13 <- cat07_13 |> 
+  mutate(nuts_id = case_when(
+    nuts_id == "DE41" ~ "DE40",
+    nuts_id == "DED1" ~ "DED4",
+    # DEE0 was created by merging DEE1 (poor), DEE2 (phasing out), DEE3 (poor)
+    # So I'll consider it poor and I'll convert one of their code into DE00 in here
+    # and then deleting the other below
+    nuts_id == "DEE1" ~ "DEE0",
+    nuts_id == "GR11" ~ "EL51",
+    nuts_id == "GR14" ~ "EL61",
+    nuts_id == "GR21" ~ "EL54",
+    nuts_id == "GR22" ~ "EL62",
+    nuts_id == "GR23" ~ "EL63",
+    nuts_id == "GR25" ~ "EL65",
+    nuts_id == "GR41" ~ "EL41",
+    nuts_id == "GR43" ~ "EL43",
+    nuts_id == "FR92" ~ "FRY2",
+    nuts_id == "FR93" ~ "FRY3",
+    nuts_id == "FR94" ~ "FRY4",
+    # In the commission decision BG and RO use different codes which are more current
+    nuts_id == "BG11" ~ "BG31",
+    nuts_id == "BG12" ~ "BG32",
+    nuts_id == "BG13" ~ "BG33",
+    nuts_id == "BG21" ~ "BG34",
+    nuts_id == "BG22" ~ "BG41",
+    nuts_id == "BG23" ~ "BG42",
+    nuts_id == "PL11" ~ "PL71",
+    nuts_id == "PL31" ~ "PL81",
+    nuts_id == "PL32" ~ "PL82",
+    nuts_id == "PL33" ~ "PL72",
+    nuts_id == "PL34" ~ "PL84",
+    nuts_id == "RO01" ~ "RO21",
+    nuts_id == "RO02" ~ "RO22",
+    nuts_id == "RO03" ~ "RO31",
+    nuts_id == "RO04" ~ "RO41",
+    nuts_id == "RO05" ~ "RO42",
+    nuts_id == "RO06" ~ "RO11",
+    nuts_id == "RO07" ~ "RO12",
+    nuts_id == "RO08" ~ "RO32",
+    TRUE ~ nuts_id
+  )) |> 
+  filter(nuts_id != "DEE3") |>
+  # Slovenia SI00 was split into SI01 and SI02 which are then recoded as SI03 and SI04
+  # So I need to add those two lines
+  filter(nuts_id != "SI00") |>
+  rbind(c("SI03", "Conv")) |>
+  rbind(c("SI04", "Conv"))
+
+anti_join(cat07_13, data, by = c("nuts_id" = "NUTS2_ID"))
+```
+
+```{r}
+data <- data |> 
+  left_join(cat07_13, by = c("NUTS2_ID" = "nuts_id")) |> 
+  rename(poor07_13 = objective_code) |> 
+  mutate(poor07_13 = case_when(
+    Year >= 2007 & Year <=2013 & is.na(poor07_13) ~ 0,
+    Year >= 2007 & Year <=2013 & poor07_13 == "Conv" ~ 1,
+    Year < 2007 ~ NA,
+    Year > 2013 ~ NA
+  ))
+```
+
+
+2000-2006
+
+From [decision](https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX%3A01999D0502-20040501)
+
+
+```{r}
+cat00_06 <- read_csv("cat00_06.csv")
+
+cat00_06 <- cat00_06 |> 
+  # Selecting only the least developed regions: objective 1
+  filter(pop_obj1 > 0) |> 
+  # Converting NUTS3 into NUTS2 codes
+  mutate(nuts_id = substr(nuts_id, 1, 4)) |> 
+  pull(nuts_id) |> 
+  unique()
+
+# Adding a dummy which will then be merged
+cat00_06 <- tibble(nuts_id = cat00_06) |> 
+  mutate(objective_code = 1)
+
+# Which of these regions is not present in the dataset due to NUTS discrepancies
+missing_regions <- anti_join(cat00_06, data, by = c("nuts_id" = "NUTS2_ID"))
+
+# Regions which I have deleted because I couldn't use their data
+deleted_regions <- c("FR91", "UKI1", "UKI2", "UKZZ", "IE01", "IE02", 
+                     "LT00", "HU10", "PL12", "UKM2", "UKM3", "HR04")
+
+# Regions that I should try to identify
+missing_regions <- missing_regions |> 
+  filter(!nuts_id %in% deleted_regions)
+missing_regions
+
+# These are all regions which have undergone only code name changes or minor reshuffling 
+cat00_06 <- cat00_06 |> 
+  mutate(nuts_id = case_when(
+    # DE40 was created by merging DE41 (poor), and DE42 (poor)
+    # So I'll consider it poor and I'll convert one of their code into DE40 in here
+    # and then deleting the other below
+    nuts_id == "DE41" ~ "DE40",
+    nuts_id == "DED1" ~ "DED4",
+    nuts_id == "DED3" ~ "DED5",
+    # DEE0 was created by merging DEE1 (poor), DEE2 (poor), DEE3 (poor)
+    # So I'll consider it poor and I'll convert one of their code into DE00 in here
+    # and then deleting the other below
+    nuts_id == "DEE1" ~ "DEE0",
+    nuts_id == "GR11" ~ "EL51",
+    nuts_id == "GR12" ~ "EL52",
+    nuts_id == "GR13" ~ "EL53",
+    nuts_id == "GR14" ~ "EL61",
+    nuts_id == "GR21" ~ "EL54",
+    nuts_id == "GR22" ~ "EL62",
+    nuts_id == "GR23" ~ "EL63",
+    nuts_id == "GR24" ~ "EL64",
+    nuts_id == "GR25" ~ "EL65",
+    nuts_id == "GR30" ~ "EL30",
+    nuts_id == "GR41" ~ "EL41",
+    nuts_id == "GR42" ~ "EL42",
+    nuts_id == "GR43" ~ "EL43",
+    nuts_id == "FR92" ~ "FRY2",
+    nuts_id == "FR93" ~ "FRY3",
+    nuts_id == "FR94" ~ "FRY4",
+    nuts_id == "PL11" ~ "PL71",
+    nuts_id == "PL31" ~ "PL81",
+    nuts_id == "PL32" ~ "PL82",
+    nuts_id == "PL33" ~ "PL72",
+    nuts_id == "PL34" ~ "PL84",
+    # FI1D was created by merging FI13 (poor), FI1A (poor)
+    # So I'll consider it poor and I'll convert one of their code into FI1D in here
+    # and then deleting the other below
+    nuts_id == "FI13" ~ "FI1D",
+    nuts_id == "SE06" ~ "SE31",
+    nuts_id == "SE07" ~ "SE32",
+    nuts_id == "SE08" ~ "SE33",
+    nuts_id == "UKD5" ~ "UKD7",
+    TRUE ~ nuts_id
+  )) |> 
+  filter(nuts_id != "DE42") |> 
+  filter(nuts_id != "DEE3") |>
+  filter(nuts_id != "DEE2") |>
+  filter(nuts_id != "FI1A") |> 
+  # Slovenia SI00 was split into SI01 and SI02 which are then recoded as SI03 and SI04
+  # So I need to add those two lines
+  filter(nuts_id != "SI00") |>
+  rbind(c("SI03", 1)) |>
+  rbind(c("SI04", 1))
+
+anti_join(cat00_06, data, by = c("nuts_id" = "NUTS2_ID"))
+```
+
+```{r}
+data <- data |> 
+  left_join(cat00_06, by = c("NUTS2_ID" = "nuts_id")) |> 
+  rename(poor00_06 = objective_code) |> 
+  mutate(poor00_06 = case_when(
+    Year >= 2000 & Year <=2006 & is.na(poor00_06) ~ 0,
+    Year >= 2000 & Year <=2006 & poor00_06 == 1 ~ 1,
+    Year < 2000 ~ NA,
+    Year > 2006 ~ NA,
+  ))
+```
+
+
+
+
+
+
+
+
+```{r}
+min(education$YEAR)
+
+# education data is only from 2000 onward so I am probably only going to keep data from 2000 onward   
+```
+
+
+
+
+
+
+
+Potentially interesting variables
+
+  - GVA instead of GDP
+  - Compensation of Employees at constant prices
+  - Real compensation per hour worked
+  - Real labour productivity per hour worked
+  - Early leavers from education and training (18-24 years)
+  - Young people neither in employment nor in education and training (NEET, 15-29 years) 
