@@ -700,6 +700,19 @@ data <- data |>
   rename(investment = VALUE)
 ```
 
+
+
+```{r}
+min(education$YEAR)
+
+# education data is only from 2000 onward so I am probably only going to keep data from that year onward
+
+data <- data |> 
+  filter(Year >= 2000) |> 
+  select(-`expenditure_1989-1993_budget`)
+```
+
+
 ## Binary - poor regions
 
 2014-2020
@@ -953,17 +966,1047 @@ data <- data |>
 ```
 
 
-
-
-
-
-
+# Getting ready for regressions
 
 ```{r}
-min(education$YEAR)
-
-# education data is only from 2000 onward so I am probably only going to keep data from 2000 onward   
+plot_intro(data)
+plot_missing(data)
+str(data)
 ```
+
+I have few missing data for unemployment and education only.
+
+```{r}
+# data <- data |> 
+#   filter(!is.na(Unemployment) & 
+#          !is.na(GDP) & 
+#          !is.na(Population) & 
+#          !is.na(Education) & 
+#          !is.na(GFCF))
+
+data <- data |> 
+  mutate(across(starts_with("expenditure"), ~ .x/population)) |> 
+  mutate(unemployment = ((unemployment* 1000)/population)*1000) |> 
+  mutate(investment = (investment*1000000/population))
+# Now I have:
+# 1) expenditure per capita
+# 2) number of unemployed per 1000 people
+# 3) GDP per capita
+# 4) % of people with tertiary education
+# 4) investment per capita
+# 5) binary for poor regions
+
+data <- data |>
+  select(-population)
+```
+
+Creating dataframe with growth rate of unemployment
+
+```{r}
+data_gr <- data |> 
+  arrange(NUTS2_ID, Year) |> 
+  group_by(NUTS2_ID) |> 
+  mutate(
+    unemployment = case_when(
+      lag(Year) == Year - 1 ~ (unemployment - lag(unemployment)) / lag(unemployment) * 100,
+      TRUE ~ NA)
+  ) |> 
+  ungroup()
+
+data_allgr <- data |> 
+  arrange(NUTS2_ID, Year) |> 
+  group_by(NUTS2_ID) |> 
+  mutate(
+    unemployment = case_when(
+      lag(Year) == Year - 1 ~ (unemployment - lag(unemployment)) / lag(unemployment) * 100,
+      TRUE ~ NA),
+    gdp = case_when(
+      lag(Year) == Year - 1 ~ (gdp - lag(gdp)) / lag(gdp) * 100,
+      TRUE ~ NA),
+    investment = case_when(
+      lag(Year) == Year - 1 ~ (investment - lag(investment)) / lag(investment) * 100,
+      TRUE ~ NA),
+    education = case_when(
+      lag(Year) == Year - 1 ~ (education - lag(education)) / lag(education) * 100,
+      TRUE ~ NA)) |> 
+  ungroup()
+
+plot_missing(data_gr)
+plot_missing(data)
+plot_missing(data_allgr)
+```
+
+Filtering out rows with missing values
+
+```{r}
+data <- data |>
+  filter(!is.na(unemployment)) |> 
+  filter(!is.na(education))
+
+data_gr <- data_gr |>
+  filter(!is.na(unemployment)) |> 
+  filter(!is.na(education))
+
+data_allgr <- data_allgr |>
+  filter(!is.na(unemployment)) |> 
+  filter(!is.na(education)) |> 
+  filter(!is.na(gdp)) |> 
+  filter(!is.na(investment))
+
+plot_missing(data)
+plot_missing(data_gr)
+plot_missing(data_allgr)
+```
+
+Splitting into 1 dataframe per year
+
+1) Absolute values
+
+```{r}
+# List of dataframes 1 per year
+list_data <- split(data, data$Year)
+
+#  Removing columns with all NAs (i.e. Keeping only the relevant budget cycle columns for each year)
+list_data_cleaned <- map(list_data, ~ .x[, colSums(!is.na(.x)) > 0])
+
+# How many regions per year
+lapply(list_data_cleaned, dim)
+
+# Keeping only the numeric variables for regression 
+list_data_cleaned <- map(list_data_cleaned, ~ 
+  .x |> 
+    select(where(is.numeric)) |> 
+    select(-Year))
+```
+
+2) Growth rate of unemployment
+
+```{r}
+# List of dataframes 1 per year
+list_data_gr <- split(data_gr, data_gr$Year)
+
+#  Removing columns with all NAs (i.e. Keeping only the relevant budget cycle columns for each year)
+list_data_gr_cleaned <- map(list_data_gr, ~ .x[, colSums(!is.na(.x)) > 0])
+
+# How many regions per year
+lapply(list_data_gr_cleaned, dim)
+
+# Keeping only the numeric variables for regression 
+list_data_gr_cleaned <- map(list_data_gr_cleaned, ~ 
+  .x |> 
+    select(where(is.numeric)) |> 
+    select(-Year))
+```
+
+3) All growth rates
+
+```{r}
+# List of dataframes 1 per year
+list_data_allgr <- split(data_allgr, data_allgr$Year)
+
+#  Removing columns with all NAs (i.e. Keeping only the relevant budget cycle columns for each year)
+list_data_allgr_cleaned <- map(list_data_allgr, ~ .x[, colSums(!is.na(.x)) > 0])
+
+# How many regions per year
+lapply(list_data_allgr_cleaned, dim)
+
+# Keeping only the numeric variables for regression 
+list_data_allgr_cleaned <- map(list_data_allgr_cleaned, ~ 
+  .x |> 
+    select(where(is.numeric)) |> 
+    select(-Year))
+```
+
+
+
+# Models
+
+## 1) Model using absolute value of unemployment
+
+```{r}
+regression_ab <- map(list_data_cleaned, ~ lm(unemployment ~ ., data = .x))
+
+rsquared <- map_dbl(regression_ab, ~ summary(.x)$r.squared)
+ab <- tibble(
+  year = names(rsquared),
+  r_squared = as.numeric(rsquared)
+)
+
+coefficients <- map_dfr(regression_ab, ~ broom::tidy(.x), .id = "year") |> 
+  filter(term != "(Intercept)") |> 
+  select(year, term, estimate) |>
+  pivot_wider(names_from = term, values_from = estimate)
+pvals <- map_dfr(regression_ab, ~ broom::tidy(.x), .id = "year") |> 
+  filter(term != "(Intercept)") |> 
+  select(year, term, p.value) |> 
+  pivot_wider(names_from = term, values_from = p.value, names_prefix = "p.value_")
+
+ab <- ab |> 
+  left_join(coefficients, by = "year") |> 
+  left_join(pvals, by = "year") |>
+  mutate(across(where(is.numeric), ~ round(.x, 6))) |> 
+  relocate("`expenditure_2007-2013_budget`", .after = "`expenditure_2000-2006_budget`") |>
+  relocate("`expenditure_2014-2020_budget`", .after = "`expenditure_2007-2013_budget`") |>
+  relocate("p.value_education", .after = "education") |>
+  relocate("p.value_gdp", .after = "gdp") |>
+  relocate("p.value_investment", .after = "investment") |> 
+  relocate("p.value_`expenditure_1994-1999_budget`", .after = "`expenditure_1994-1999_budget`") |> 
+  relocate("p.value_`expenditure_2000-2006_budget`", .after = "`expenditure_2000-2006_budget`") |>
+  relocate("p.value_`expenditure_2007-2013_budget`", .after = "`expenditure_2007-2013_budget`") |>
+  relocate("p.value_`expenditure_2014-2020_budget`", .after = "`expenditure_2014-2020_budget`") |> 
+  relocate("p.value_poor00_06", .after = "poor00_06") |>
+  relocate("p.value_poor07_13", .after = "poor07_13") |>
+  relocate("p.value_poor14_20", .after = "poor14_20")
+
+# Expected coefficients
+# expenditure -> negative
+# GDP -> negative
+# Education -> negative
+# investment -> negative
+# poor binaries -> positive
+
+# Mostly positive coefficient for expenditure, sometimes significant, sometimes non-significant
+# gdp both positive and negative coefficients, more insignificant than significant
+# education is positive, sometimes non-significant
+# investment is negative most of the times significant
+# poor binaries tend to be significant and positive in the first years, negative in recent years
+mean(ab$r_squared)
+ab |> filter(p.value_gdp < 0.1) |> nrow()
+ab |> filter(p.value_investment < 0.1) |> nrow()
+ab |> filter(p.value_education < 0.1) |> nrow()
+```
+
+
+## 2) Model using growth rate unemployment
+
+```{r}
+regression_gr <- map(list_data_gr_cleaned, ~ lm(unemployment ~ ., data = .x))
+
+rsquared <- map_dbl(regression_gr, ~ summary(.x)$r.squared)
+gr <- tibble(
+  year = names(rsquared),
+  r_squared = as.numeric(rsquared)
+)
+
+coefficients <- map_dfr(regression_gr, ~ broom::tidy(.x), .id = "year") |> 
+  filter(term != "(Intercept)") |> 
+  select(year, term, estimate) |>
+  pivot_wider(names_from = term, values_from = estimate)
+pvals <- map_dfr(regression_gr, ~ broom::tidy(.x), .id = "year") |> 
+  filter(term != "(Intercept)") |> 
+  select(year, term, p.value) |> 
+  pivot_wider(names_from = term, values_from = p.value, names_prefix = "p.value_")
+
+gr <- gr |> 
+  left_join(coefficients, by = "year") |> 
+  left_join(pvals, by = "year") |>
+  mutate(across(where(is.numeric), ~ round(.x, 6))) |> 
+  relocate("`expenditure_2007-2013_budget`", .after = "`expenditure_2000-2006_budget`") |>
+  relocate("`expenditure_2014-2020_budget`", .after = "`expenditure_2007-2013_budget`") |>
+  relocate("p.value_education", .after = "education") |>
+  relocate("p.value_gdp", .after = "gdp") |>
+  relocate("p.value_investment", .after = "investment") |> 
+  relocate("p.value_`expenditure_1994-1999_budget`", .after = "`expenditure_1994-1999_budget`") |> 
+  relocate("p.value_`expenditure_2000-2006_budget`", .after = "`expenditure_2000-2006_budget`") |>
+  relocate("p.value_`expenditure_2007-2013_budget`", .after = "`expenditure_2007-2013_budget`") |>
+  relocate("p.value_`expenditure_2014-2020_budget`", .after = "`expenditure_2014-2020_budget`") |> 
+  relocate("p.value_poor00_06", .after = "poor00_06") |>
+  relocate("p.value_poor07_13", .after = "poor07_13") |>
+  relocate("p.value_poor14_20", .after = "poor14_20")
+
+# Expenditure is almost always insignificant but it tends to be negative for older or more recent years (not in the center)
+# gdp most of the times non significant, coefficients both positives and negatives
+# education is mostly negative sometimes non significant
+# investment is mostly negative and sometimes non-significant
+# binaries are primarly negative rairly significant
+mean(gr$r_squared)
+gr |> filter(p.value_gdp < 0.1) |> nrow()
+gr |> filter(p.value_investment < 0.1) |> nrow()
+gr |> filter(p.value_education < 0.1) |> nrow()
+```
+
+## 3) All growth rates
+
+```{r}
+regression_allgr <- map(list_data_allgr_cleaned, ~ lm(unemployment ~ ., data = .x))
+
+rsquared <- map_dbl(regression_allgr, ~ summary(.x)$r.squared)
+allgr <- tibble(
+  year = names(rsquared),
+  r_squared = as.numeric(rsquared)
+)
+
+coefficients <- map_dfr(regression_allgr, ~ broom::tidy(.x), .id = "year") |> 
+  filter(term != "(Intercept)") |> 
+  select(year, term, estimate) |>
+  pivot_wider(names_from = term, values_from = estimate)
+pvals <- map_dfr(regression_allgr, ~ broom::tidy(.x), .id = "year") |> 
+  filter(term != "(Intercept)") |> 
+  select(year, term, p.value) |> 
+  pivot_wider(names_from = term, values_from = p.value, names_prefix = "p.value_")
+
+allgr <- allgr |> 
+  left_join(coefficients, by = "year") |> 
+  left_join(pvals, by = "year") |>
+  mutate(across(where(is.numeric), ~ round(.x, 6))) |> 
+  relocate("`expenditure_2007-2013_budget`", .after = "`expenditure_2000-2006_budget`") |>
+  relocate("`expenditure_2014-2020_budget`", .after = "`expenditure_2007-2013_budget`") |>
+  relocate("p.value_education", .after = "education") |>
+  relocate("p.value_gdp", .after = "gdp") |>
+  relocate("p.value_investment", .after = "investment") |> 
+  relocate("p.value_`expenditure_1994-1999_budget`", .after = "`expenditure_1994-1999_budget`") |> 
+  relocate("p.value_`expenditure_2000-2006_budget`", .after = "`expenditure_2000-2006_budget`") |>
+  relocate("p.value_`expenditure_2007-2013_budget`", .after = "`expenditure_2007-2013_budget`") |>
+  relocate("p.value_`expenditure_2014-2020_budget`", .after = "`expenditure_2014-2020_budget`") |> 
+  relocate("p.value_poor00_06", .after = "poor00_06") |>
+  relocate("p.value_poor07_13", .after = "poor07_13") |>
+  relocate("p.value_poor14_20", .after = "poor14_20")
+
+# expenditure almost never significant both negative and positive coefficients
+# gdp almost always significant, almost always negative
+# education is mostly negative, often non significant
+# investment is rarely significant and coefficients both positive and negative
+# binary poor basically never significant coefficients both ways
+mean(allgr$r_squared)
+allgr |> filter(p.value_gdp < 0.1) |> nrow()
+allgr |> filter(p.value_investment < 0.1) |> nrow()
+allgr |> filter(p.value_education < 0.1) |> nrow()
+```
+
+## 4) Only controls model
+
+```{r}
+# GDP
+regression1 <- map(list_data_cleaned, ~ lm(unemployment ~ gdp, data = .x))
+rsquared <- map_dbl(regression1, ~ summary(.x)$r.squared)
+solo_gdp <- tibble(
+  year = names(rsquared),
+  r_squared = as.numeric(rsquared)
+)
+coefficients <- map_dfr(
+  regression1,
+  ~ broom::tidy(.x), 
+  .id = "year") |> 
+  filter(term == "gdp") |> 
+  select(year, term, estimate, p.value) |>
+  pivot_wider(names_from = term, values_from = estimate)
+solo_gdp <- solo_gdp |> 
+  left_join(coefficients, by = "year") |> 
+  mutate(across(where(is.numeric), ~ round(.x, 6)))
+# GDP is constantly significant and negative when predicting absolute unemployment values
+solo_gdp |> filter(p.value < 0.1) |> nrow()
+mean(solo_gdp$r_squared)
+
+regression1_gr <- map(list_data_gr_cleaned, ~ lm(unemployment ~ gdp, data = .x))
+rsquared <- map_dbl(regression1_gr, ~ summary(.x)$r.squared)
+solo_gdp_gr <- tibble(
+  year = names(rsquared),
+  r_squared = as.numeric(rsquared)
+)
+coefficients <- map_dfr(
+  regression1_gr,
+  ~ broom::tidy(.x), 
+  .id = "year") |> 
+  filter(term == "gdp") |> 
+  select(year, term, estimate, p.value) |>
+  pivot_wider(names_from = term, values_from = estimate)
+solo_gdp_gr <- solo_gdp_gr |> 
+  left_join(coefficients, by = "year") |> 
+  mutate(across(where(is.numeric), ~ round(.x, 6)))
+# GDP is rarely significant and never negative when predicting growth rate of unemployment
+solo_gdp_gr |> filter(p.value < 0.1) |> nrow()
+mean(solo_gdp_gr$r_squared)
+
+
+regression1_allgr <- map(list_data_allgr_cleaned, ~ lm(unemployment ~ gdp, data = .x))
+rsquared <- map_dbl(regression1_allgr, ~ summary(.x)$r.squared)
+solo_gdp_allgr <- tibble(
+  year = names(rsquared),
+  r_squared = as.numeric(rsquared)
+)
+coefficients <- map_dfr(
+  regression1_allgr,
+  ~ broom::tidy(.x), 
+  .id = "year") |> 
+  filter(term == "gdp") |> 
+  select(year, term, estimate, p.value) |>
+  pivot_wider(names_from = term, values_from = estimate)
+solo_gdp_allgr <- solo_gdp_allgr |> 
+  left_join(coefficients, by = "year") |> 
+  mutate(across(where(is.numeric), ~ round(.x, 6)))
+# When both are in growth rates gdp is almost always significant and when significant is negative
+solo_gdp_allgr |> filter(p.value < 0.1) |> nrow()
+mean(solo_gdp_allgr$r_squared)
+
+# It seems like the best models both in terms of R-squared and expected coefficients are abs and allgr
+```
+
+```{r}
+# Investment
+regression1 <- map(list_data_cleaned, ~ lm(unemployment ~ investment, data = .x))
+rsquared <- map_dbl(regression1, ~ summary(.x)$r.squared)
+solo_investment <- tibble(
+  year = names(rsquared),
+  r_squared = as.numeric(rsquared)
+)
+coefficients <- map_dfr(
+  regression1,
+  ~ broom::tidy(.x), 
+  .id = "year") |> 
+  filter(term == "investment") |> 
+  select(year, term, estimate, p.value) |>
+  pivot_wider(names_from = term, values_from = estimate)
+solo_investment <- solo_investment |> 
+  left_join(coefficients, by = "year") |> 
+  mutate(across(where(is.numeric), ~ round(.x, 6)))
+# Investment is constantly significant and negative when predicting absolute unemployment values
+solo_investment |> filter(p.value < 0.1) |> nrow()
+mean(solo_investment$r_squared)
+
+
+regression1_gr <- map(list_data_gr_cleaned, ~ lm(unemployment ~ investment, data = .x))
+rsquared <- map_dbl(regression1_gr, ~ summary(.x)$r.squared)
+solo_investment_gr <- tibble(
+  year = names(rsquared),
+  r_squared = as.numeric(rsquared)
+)
+coefficients <- map_dfr(
+  regression1_gr,
+  ~ broom::tidy(.x), 
+  .id = "year") |> 
+  filter(term == "investment") |> 
+  select(year, term, estimate, p.value) |>
+  pivot_wider(names_from = term, values_from = estimate)
+solo_investment_gr <- solo_investment_gr |> 
+  left_join(coefficients, by = "year") |> 
+  mutate(across(where(is.numeric), ~ round(.x, 6)))
+# Investment is sometimes significant and often negative when significant. Predicting growth rate of unemployment
+solo_investment_gr |> filter(p.value < 0.1) |> nrow()
+mean(solo_investment_gr$r_squared)
+
+
+regression1_allgr <- map(list_data_allgr_cleaned, ~ lm(unemployment ~ investment, data = .x))
+rsquared <- map_dbl(regression1_allgr, ~ summary(.x)$r.squared)
+solo_investment_allgr <- tibble(
+  year = names(rsquared),
+  r_squared = as.numeric(rsquared)
+)
+coefficients <- map_dfr(
+  regression1_allgr,
+  ~ broom::tidy(.x), 
+  .id = "year") |> 
+  filter(term == "investment") |> 
+  select(year, term, estimate, p.value) |>
+  pivot_wider(names_from = term, values_from = estimate)
+solo_investment_allgr <- solo_investment_allgr |> 
+  left_join(coefficients, by = "year") |> 
+  mutate(across(where(is.numeric), ~ round(.x, 6)))
+# When both are in growth rates investment is sometimes significant and mostly negative
+solo_investment_allgr |> filter(p.value < 0.1) |> nrow()
+mean(solo_investment_allgr$r_squared)
+
+# It seems like here the best model is absolute values
+```
+
+```{r}
+# Education
+regression1 <- map(list_data_cleaned, ~ lm(unemployment ~ education, data = .x))
+rsquared <- map_dbl(regression1, ~ summary(.x)$r.squared)
+solo_education <- tibble(
+  year = names(rsquared),
+  r_squared = as.numeric(rsquared)
+)
+coefficients <- map_dfr(
+  regression1,
+  ~ broom::tidy(.x), 
+  .id = "year") |> 
+  filter(term == "education") |> 
+  select(year, term, estimate, p.value) |>
+  pivot_wider(names_from = term, values_from = estimate)
+solo_education <- solo_education |> 
+  left_join(coefficients, by = "year") |> 
+  mutate(across(where(is.numeric), ~ round(.x, 6)))
+# education is rarely significant and mostly negative when predicting absolute unemployment values
+solo_education |> filter(p.value < 0.1) |> nrow()
+mean(solo_education$r_squared)
+
+
+regression1_gr <- map(list_data_gr_cleaned, ~ lm(unemployment ~ education, data = .x))
+rsquared <- map_dbl(regression1_gr, ~ summary(.x)$r.squared)
+solo_education_gr <- tibble(
+  year = names(rsquared),
+  r_squared = as.numeric(rsquared)
+)
+coefficients <- map_dfr(
+  regression1_gr,
+  ~ broom::tidy(.x), 
+  .id = "year") |> 
+  filter(term == "education") |> 
+  select(year, term, estimate, p.value) |>
+  pivot_wider(names_from = term, values_from = estimate)
+solo_education_gr <- solo_education_gr |> 
+  left_join(coefficients, by = "year") |> 
+  mutate(across(where(is.numeric), ~ round(.x, 6)))
+# education is sometimes significant but no consistent sign when predicting growth rate of unemployment
+solo_education_gr |> filter(p.value < 0.1) |> nrow()
+mean(solo_education_gr$r_squared)
+
+
+regression1_allgr <- map(list_data_allgr_cleaned, ~ lm(unemployment ~ education, data = .x))
+rsquared <- map_dbl(regression1_allgr, ~ summary(.x)$r.squared)
+solo_education_allgr <- tibble(
+  year = names(rsquared),
+  r_squared = as.numeric(rsquared)
+)
+coefficients <- map_dfr(
+  regression1_allgr,
+  ~ broom::tidy(.x), 
+  .id = "year") |> 
+  filter(term == "education") |> 
+  select(year, term, estimate, p.value) |>
+  pivot_wider(names_from = term, values_from = estimate)
+solo_education_allgr <- solo_education_allgr |> 
+  left_join(coefficients, by = "year") |> 
+  mutate(across(where(is.numeric), ~ round(.x, 6)))
+# When both are in growth rates education is sometimes significant but no consistent sign
+solo_education_allgr |> filter(p.value < 0.1) |> nrow()
+mean(solo_education_gr$r_squared)
+
+# Education does not seem to be a really relevant variable
+```
+
+```{r}
+# gdp + poor binaries
+regression1 <- map(list_data_cleaned, function(df) {
+  # Find column names that start with "poor"
+  poor_vars <- names(df)[startsWith(names(df), "poor")]
+
+  # Build the regression formula
+  formula <- as.formula(paste("unemployment ~ gdp +", paste(poor_vars, collapse = " + ")))
+
+  # Run regression
+  lm(formula, data = df)
+})
+rsquared <- map_dbl(regression1, ~ summary(.x)$r.squared)
+solo_controls <- tibble(
+  year = names(rsquared),
+  r_squared = as.numeric(rsquared)
+)
+coefficients <- map_dfr(
+  regression1,
+  ~ broom::tidy(.x), 
+  .id = "year") |> 
+  filter(term != "(Intercept)") |> 
+  select(year, term, estimate) |>
+  pivot_wider(names_from = term, values_from = estimate)
+pvals <- map_dfr(
+  regression1,
+  ~ broom::tidy(.x), 
+  .id = "year") |> 
+  filter(term != "(Intercept)") |> 
+  select(year, term, p.value) |> 
+  pivot_wider(names_from = term, values_from = p.value, names_prefix = "p.value_")
+solo_controls <- solo_controls |> 
+  left_join(coefficients, by = "year") |> 
+  left_join(pvals, by = "year") |>
+  mutate(across(where(is.numeric), ~ round(.x, 6))) |> 
+  # relocate("p.value_education", .after = "education") |>
+  relocate("p.value_gdp", .after = "gdp") |>
+  # relocate("p.value_investment", .after = "investment") |> 
+    relocate("p.value_poor00_06", .after = "poor00_06") |>
+  relocate("p.value_poor07_13", .after = "poor07_13") |>
+  relocate("p.value_poor14_20", .after = "poor14_20")
+# gdp is always negative and most of the times significant
+# poor are significant and positive for early 2000, insignifacant for middle 200s, significant and negative for 2010s
+solo_controls |> filter(p.value_gdp < 0.1) |> nrow()
+mean(solo_controls$r_squared)
+
+
+regression1 <- map(list_data_gr_cleaned, function(df) {
+  # Find column names that start with "poor"
+  poor_vars <- names(df)[startsWith(names(df), "poor")]
+
+  # Build the regression formula
+  formula <- as.formula(paste("unemployment ~ gdp +", paste(poor_vars, collapse = " + ")))
+
+  # Run regression
+  lm(formula, data = df)
+})
+rsquared <- map_dbl(regression1, ~ summary(.x)$r.squared)
+solo_controls <- tibble(
+  year = names(rsquared),
+  r_squared = as.numeric(rsquared)
+)
+coefficients <- map_dfr(
+  regression1,
+  ~ broom::tidy(.x), 
+  .id = "year") |> 
+  filter(term != "(Intercept)") |> 
+  select(year, term, estimate) |>
+  pivot_wider(names_from = term, values_from = estimate)
+pvals <- map_dfr(
+  regression1,
+  ~ broom::tidy(.x), 
+  .id = "year") |> 
+  filter(term != "(Intercept)") |> 
+  select(year, term, p.value) |> 
+  pivot_wider(names_from = term, values_from = p.value, names_prefix = "p.value_")
+solo_controls <- solo_controls |> 
+  left_join(coefficients, by = "year") |> 
+  left_join(pvals, by = "year") |>
+  mutate(across(where(is.numeric), ~ round(.x, 6))) |> 
+  # relocate("p.value_education", .after = "education") |>
+  relocate("p.value_gdp", .after = "gdp") |>
+  # relocate("p.value_investment", .after = "investment") |> 
+  relocate("p.value_poor00_06", .after = "poor00_06") |>
+  relocate("p.value_poor07_13", .after = "poor07_13") |>
+  relocate("p.value_poor14_20", .after = "poor14_20")
+# gdp rarely significant, poor mostly negative
+solo_controls |> filter(p.value_gdp < 0.1) |> nrow()
+mean(solo_controls$r_squared)
+
+
+regression1 <- map(list_data_allgr_cleaned, function(df) {
+  # Find column names that start with "poor"
+  poor_vars <- names(df)[startsWith(names(df), "poor")]
+
+  # Build the regression formula
+  formula <- as.formula(paste("unemployment ~ gdp +", paste(poor_vars, collapse = " + ")))
+
+  # Run regression
+  lm(formula, data = df)
+})
+rsquared <- map_dbl(regression1, ~ summary(.x)$r.squared)
+solo_controls <- tibble(
+  year = names(rsquared),
+  r_squared = as.numeric(rsquared)
+)
+coefficients <- map_dfr(
+  regression1,
+  ~ broom::tidy(.x), 
+  .id = "year") |> 
+  filter(term != "(Intercept)") |> 
+  select(year, term, estimate) |>
+  pivot_wider(names_from = term, values_from = estimate)
+pvals <- map_dfr(
+  regression1,
+  ~ broom::tidy(.x), 
+  .id = "year") |> 
+  filter(term != "(Intercept)") |> 
+  select(year, term, p.value) |> 
+  pivot_wider(names_from = term, values_from = p.value, names_prefix = "p.value_")
+solo_controls <- solo_controls |> 
+  left_join(coefficients, by = "year") |> 
+  left_join(pvals, by = "year") |>
+  mutate(across(where(is.numeric), ~ round(.x, 6))) |> 
+  # relocate("p.value_education", .after = "education") |>
+  relocate("p.value_gdp", .after = "gdp") |>
+  # relocate("p.value_investment", .after = "investment") |> 
+  relocate("p.value_poor00_06", .after = "poor00_06") |>
+  relocate("p.value_poor07_13", .after = "poor07_13") |>
+  relocate("p.value_poor14_20", .after = "poor14_20")
+# gdp mostly significant (and negative)
+# poor binaries are not often significant and coefficients both positive and negatives
+solo_controls |> filter(p.value_gdp < 0.1) |> nrow()
+mean(solo_controls$r_squared)
+
+# not sure if poor binaries help that much
+```
+
+```{r}
+# GDP+Investment 
+regression1 <- map(list_data_cleaned, ~ lm(unemployment ~ gdp + investment, data = .x))
+rsquared <- map_dbl(regression1, ~ summary(.x)$r.squared)
+solo_controls <- tibble(
+  year = names(rsquared),
+  r_squared = as.numeric(rsquared)
+)
+coefficients <- map_dfr(
+  regression1,
+  ~ broom::tidy(.x), 
+  .id = "year") |> 
+  filter(term != "(Intercept)") |> 
+  select(year, term, estimate) |>
+  pivot_wider(names_from = term, values_from = estimate)
+pvals <- map_dfr(
+  regression1,
+  ~ broom::tidy(.x), 
+  .id = "year") |> 
+  filter(term != "(Intercept)") |> 
+  select(year, term, p.value) |> 
+  pivot_wider(names_from = term, values_from = p.value, names_prefix = "p.value_")
+solo_controls <- solo_controls |> 
+  left_join(coefficients, by = "year") |> 
+  left_join(pvals, by = "year") |>
+  mutate(across(where(is.numeric), ~ round(.x, 6))) |> 
+  #relocate("p.value_education", .after = "education") |>
+  relocate("p.value_gdp", .after = "gdp") |>
+  relocate("p.value_investment", .after = "investment")
+# As soon as I put GDP and investment together, gdp looses basically of its significance, investment looses some of its significance
+solo_controls |> filter(p.value_gdp < 0.1) |> nrow()
+solo_controls |> filter(p.value_investment < 0.1) |> nrow()
+mean(solo_controls$r_squared)
+
+
+regression1 <- map(list_data_gr_cleaned, ~ lm(unemployment ~ gdp + investment, data = .x))
+rsquared <- map_dbl(regression1, ~ summary(.x)$r.squared)
+solo_controls <- tibble(
+  year = names(rsquared),
+  r_squared = as.numeric(rsquared)
+)
+coefficients <- map_dfr(
+  regression1,
+  ~ broom::tidy(.x), 
+  .id = "year") |> 
+  filter(term != "(Intercept)") |> 
+  select(year, term, estimate) |>
+  pivot_wider(names_from = term, values_from = estimate)
+pvals <- map_dfr(
+  regression1,
+  ~ broom::tidy(.x), 
+  .id = "year") |> 
+  filter(term != "(Intercept)") |> 
+  select(year, term, p.value) |> 
+  pivot_wider(names_from = term, values_from = p.value, names_prefix = "p.value_")
+solo_controls <- solo_controls |> 
+  left_join(coefficients, by = "year") |> 
+  left_join(pvals, by = "year") |>
+  mutate(across(where(is.numeric), ~ round(.x, 6))) |> 
+  #relocate("p.value_education", .after = "education") |>
+  relocate("p.value_gdp", .after = "gdp") |>
+  relocate("p.value_investment", .after = "investment")
+# coefficients are all over the place for both variables, most of the times non-significant
+solo_controls |> filter(p.value_gdp < 0.1) |> nrow()
+solo_controls |> filter(p.value_investment < 0.1) |> nrow()
+mean(solo_controls$r_squared)
+
+
+regression1 <- map(list_data_allgr_cleaned, ~ lm(unemployment ~ gdp + investment, data = .x))
+rsquared <- map_dbl(regression1, ~ summary(.x)$r.squared)
+solo_controls <- tibble(
+  year = names(rsquared),
+  r_squared = as.numeric(rsquared)
+)
+coefficients <- map_dfr(
+  regression1,
+  ~ broom::tidy(.x), 
+  .id = "year") |> 
+  filter(term != "(Intercept)") |> 
+  select(year, term, estimate) |>
+  pivot_wider(names_from = term, values_from = estimate)
+pvals <- map_dfr(
+  regression1,
+  ~ broom::tidy(.x), 
+  .id = "year") |> 
+  filter(term != "(Intercept)") |> 
+  select(year, term, p.value) |> 
+  pivot_wider(names_from = term, values_from = p.value, names_prefix = "p.value_")
+solo_controls <- solo_controls |> 
+  left_join(coefficients, by = "year") |> 
+  left_join(pvals, by = "year") |>
+  mutate(across(where(is.numeric), ~ round(.x, 6))) |> 
+  #relocate("p.value_education", .after = "education") |>
+  relocate("p.value_gdp", .after = "gdp") |>
+  relocate("p.value_investment", .after = "investment")
+# gdp when significant (almost always) is negative
+# investment is less significant and coefficeints non consistent
+solo_controls |> filter(p.value_gdp < 0.1) |> nrow()
+solo_controls |> filter(p.value_investment < 0.1) |> nrow()
+mean(solo_controls$r_squared)
+
+# The best models seem again to be abs and allgr (improving around 0.02 r-squared with investment when compared to only gdp)
+```
+
+```{r}
+# Adding poor binaries
+regression1 <- map(list_data_cleaned, function(df) {
+  # Find column names that start with "poor"
+  poor_vars <- names(df)[startsWith(names(df), "poor")]
+
+  # Build the regression formula
+  formula <- as.formula(paste("unemployment ~ gdp + investment +", paste(poor_vars, collapse = " + ")))
+
+  # Run regression
+  lm(formula, data = df)
+})
+rsquared <- map_dbl(regression1, ~ summary(.x)$r.squared)
+solo_controls <- tibble(
+  year = names(rsquared),
+  r_squared = as.numeric(rsquared)
+)
+coefficients <- map_dfr(
+  regression1,
+  ~ broom::tidy(.x), 
+  .id = "year") |> 
+  filter(term != "(Intercept)") |> 
+  select(year, term, estimate) |>
+  pivot_wider(names_from = term, values_from = estimate)
+pvals <- map_dfr(
+  regression1,
+  ~ broom::tidy(.x), 
+  .id = "year") |> 
+  filter(term != "(Intercept)") |> 
+  select(year, term, p.value) |> 
+  pivot_wider(names_from = term, values_from = p.value, names_prefix = "p.value_")
+solo_controls <- solo_controls |> 
+  left_join(coefficients, by = "year") |> 
+  left_join(pvals, by = "year") |>
+  mutate(across(where(is.numeric), ~ round(.x, 6))) |> 
+  #relocate("p.value_education", .after = "education") |>
+  relocate("p.value_gdp", .after = "gdp") |>
+  relocate("p.value_investment", .after = "investment") |> 
+    relocate("p.value_poor00_06", .after = "poor00_06") |>
+  relocate("p.value_poor07_13", .after = "poor07_13") |>
+  relocate("p.value_poor14_20", .after = "poor14_20")
+# Not much changes putting in also the poor binaries, investment is predominantly significant, while gdp is rarely significant (a bit more now than before). Poor binaries are primarly significant and with the right sign excpet for 07-13
+solo_controls |> filter(p.value_gdp < 0.1) |> nrow()
+solo_controls |> filter(p.value_investment < 0.1) |> nrow()
+mean(solo_controls$r_squared)
+
+
+regression1 <- map(list_data_gr_cleaned, function(df) {
+  # Find column names that start with "poor"
+  poor_vars <- names(df)[startsWith(names(df), "poor")]
+
+  # Build the regression formula
+  formula <- as.formula(paste("unemployment ~ gdp + investment +", paste(poor_vars, collapse = " + ")))
+
+  # Run regression
+  lm(formula, data = df)
+})
+rsquared <- map_dbl(regression1, ~ summary(.x)$r.squared)
+solo_controls <- tibble(
+  year = names(rsquared),
+  r_squared = as.numeric(rsquared)
+)
+coefficients <- map_dfr(
+  regression1,
+  ~ broom::tidy(.x), 
+  .id = "year") |> 
+  filter(term != "(Intercept)") |> 
+  select(year, term, estimate) |>
+  pivot_wider(names_from = term, values_from = estimate)
+pvals <- map_dfr(
+  regression1,
+  ~ broom::tidy(.x), 
+  .id = "year") |> 
+  filter(term != "(Intercept)") |> 
+  select(year, term, p.value) |> 
+  pivot_wider(names_from = term, values_from = p.value, names_prefix = "p.value_")
+solo_controls <- solo_controls |> 
+  left_join(coefficients, by = "year") |> 
+  left_join(pvals, by = "year") |>
+  mutate(across(where(is.numeric), ~ round(.x, 6))) |> 
+  #relocate("p.value_education", .after = "education") |>
+  relocate("p.value_gdp", .after = "gdp") |>
+  relocate("p.value_investment", .after = "investment") |> 
+    relocate("p.value_poor00_06", .after = "poor00_06") |>
+  relocate("p.value_poor07_13", .after = "poor07_13") |>
+  relocate("p.value_poor14_20", .after = "poor14_20")
+# gdp and investment both loose significance
+# poor binaries are often non significant and with a negative sign
+solo_controls |> filter(p.value_gdp < 0.1) |> nrow()
+solo_controls |> filter(p.value_investment < 0.1) |> nrow()
+mean(solo_controls$r_squared)
+
+
+regression1 <- map(list_data_allgr_cleaned, function(df) {
+  # Find column names that start with "poor"
+  poor_vars <- names(df)[startsWith(names(df), "poor")]
+
+  # Build the regression formula
+  formula <- as.formula(paste("unemployment ~ gdp + investment +", paste(poor_vars, collapse = " + ")))
+
+  # Run regression
+  lm(formula, data = df)
+})
+rsquared <- map_dbl(regression1, ~ summary(.x)$r.squared)
+solo_controls <- tibble(
+  year = names(rsquared),
+  r_squared = as.numeric(rsquared)
+)
+coefficients <- map_dfr(
+  regression1,
+  ~ broom::tidy(.x), 
+  .id = "year") |> 
+  filter(term != "(Intercept)") |> 
+  select(year, term, estimate) |>
+  pivot_wider(names_from = term, values_from = estimate)
+pvals <- map_dfr(
+  regression1,
+  ~ broom::tidy(.x), 
+  .id = "year") |> 
+  filter(term != "(Intercept)") |> 
+  select(year, term, p.value) |> 
+  pivot_wider(names_from = term, values_from = p.value, names_prefix = "p.value_")
+solo_controls <- solo_controls |> 
+  left_join(coefficients, by = "year") |> 
+  left_join(pvals, by = "year") |>
+  mutate(across(where(is.numeric), ~ round(.x, 6))) |> 
+  #relocate("p.value_education", .after = "education") |>
+  relocate("p.value_gdp", .after = "gdp") |>
+  relocate("p.value_investment", .after = "investment") |> 
+    relocate("p.value_poor00_06", .after = "poor00_06") |>
+  relocate("p.value_poor07_13", .after = "poor07_13") |>
+  relocate("p.value_poor14_20", .after = "poor14_20")
+# gdp often significant (and negative) 
+# investment not often significant, but when significant negative
+# poor binaries are often non significant and with a negative sign
+solo_controls |> filter(p.value_gdp < 0.1) |> nrow()
+solo_controls |> filter(p.value_investment < 0.1) |> nrow()
+mean(solo_controls$r_squared)
+
+# slight improvements with poor binaries, improve mostly the abs model
+```
+
+```{r}
+# Adding also education
+regression1 <- map(list_data_cleaned, function(df) {
+  # Find column names that start with "poor"
+  poor_vars <- names(df)[startsWith(names(df), "poor")]
+
+  # Build the regression formula
+  formula <- as.formula(paste("unemployment ~ gdp + investment + education +", paste(poor_vars, collapse = " + ")))
+
+  # Run regression
+  lm(formula, data = df)
+})
+rsquared <- map_dbl(regression1, ~ summary(.x)$r.squared)
+solo_controls <- tibble(
+  year = names(rsquared),
+  r_squared = as.numeric(rsquared)
+)
+coefficients <- map_dfr(
+  regression1,
+  ~ broom::tidy(.x), 
+  .id = "year") |> 
+  filter(term != "(Intercept)") |> 
+  select(year, term, estimate) |>
+  pivot_wider(names_from = term, values_from = estimate)
+pvals <- map_dfr(
+  regression1,
+  ~ broom::tidy(.x), 
+  .id = "year") |> 
+  filter(term != "(Intercept)") |> 
+  select(year, term, p.value) |> 
+  pivot_wider(names_from = term, values_from = p.value, names_prefix = "p.value_")
+solo_controls <- solo_controls |> 
+  left_join(coefficients, by = "year") |> 
+  left_join(pvals, by = "year") |>
+  mutate(across(where(is.numeric), ~ round(.x, 6))) |> 
+  relocate("p.value_education", .after = "education") |>
+  relocate("p.value_gdp", .after = "gdp") |>
+  relocate("p.value_investment", .after = "investment") |> 
+    relocate("p.value_poor00_06", .after = "poor00_06") |>
+  relocate("p.value_poor07_13", .after = "poor07_13") |>
+  relocate("p.value_poor14_20", .after = "poor14_20")
+# Adding education makes gdp even a bit more significant, while investment looses a bit of significance. Education is mostly significant and with the right sign. Poor binaries are primarly significant but their coefficient completely changes from 2010 on
+solo_controls |> filter(p.value_gdp < 0.1) |> nrow()
+solo_controls |> filter(p.value_investment < 0.1) |> nrow()
+solo_controls |> filter(p.value_education < 0.1) |> nrow()
+mean(solo_controls$r_squared)
+
+
+regression1 <- map(list_data_gr_cleaned, function(df) {
+  # Find column names that start with "poor"
+  poor_vars <- names(df)[startsWith(names(df), "poor")]
+
+  # Build the regression formula
+  formula <- as.formula(paste("unemployment ~ gdp + investment + education +", paste(poor_vars, collapse = " + ")))
+
+  # Run regression
+  lm(formula, data = df)
+})
+rsquared <- map_dbl(regression1, ~ summary(.x)$r.squared)
+solo_controls <- tibble(
+  year = names(rsquared),
+  r_squared = as.numeric(rsquared)
+)
+coefficients <- map_dfr(
+  regression1,
+  ~ broom::tidy(.x), 
+  .id = "year") |> 
+  filter(term != "(Intercept)") |> 
+  select(year, term, estimate) |>
+  pivot_wider(names_from = term, values_from = estimate)
+pvals <- map_dfr(
+  regression1,
+  ~ broom::tidy(.x), 
+  .id = "year") |> 
+  filter(term != "(Intercept)") |> 
+  select(year, term, p.value) |> 
+  pivot_wider(names_from = term, values_from = p.value, names_prefix = "p.value_")
+solo_controls <- solo_controls |> 
+  left_join(coefficients, by = "year") |> 
+  left_join(pvals, by = "year") |>
+  mutate(across(where(is.numeric), ~ round(.x, 6))) |> 
+  relocate("p.value_education", .after = "education") |>
+  relocate("p.value_gdp", .after = "gdp") |>
+  relocate("p.value_investment", .after = "investment") |> 
+    relocate("p.value_poor00_06", .after = "poor00_06") |>
+  relocate("p.value_poor07_13", .after = "poor07_13") |>
+  relocate("p.value_poor14_20", .after = "poor14_20")
+# education, investment and gdp all are inconsistent in terms of significance and coefficient sign 
+# Poor binaries are primarly non-significant and with a negative sign
+solo_controls |> filter(p.value_gdp < 0.1) |> nrow()
+solo_controls |> filter(p.value_investment < 0.1) |> nrow()
+solo_controls |> filter(p.value_education < 0.1) |> nrow()
+mean(solo_controls$r_squared)
+
+
+regression1 <- map(list_data_allgr_cleaned, function(df) {
+  # Find column names that start with "poor"
+  poor_vars <- names(df)[startsWith(names(df), "poor")]
+
+  # Build the regression formula
+  formula <- as.formula(paste("unemployment ~ gdp + investment + education +", paste(poor_vars, collapse = " + ")))
+
+  # Run regression
+  lm(formula, data = df)
+})
+rsquared <- map_dbl(regression1, ~ summary(.x)$r.squared)
+solo_controls <- tibble(
+  year = names(rsquared),
+  r_squared = as.numeric(rsquared)
+)
+coefficients <- map_dfr(
+  regression1,
+  ~ broom::tidy(.x), 
+  .id = "year") |> 
+  filter(term != "(Intercept)") |> 
+  select(year, term, estimate) |>
+  pivot_wider(names_from = term, values_from = estimate)
+pvals <- map_dfr(
+  regression1,
+  ~ broom::tidy(.x), 
+  .id = "year") |> 
+  filter(term != "(Intercept)") |> 
+  select(year, term, p.value) |> 
+  pivot_wider(names_from = term, values_from = p.value, names_prefix = "p.value_")
+solo_controls <- solo_controls |> 
+  left_join(coefficients, by = "year") |> 
+  left_join(pvals, by = "year") |>
+  mutate(across(where(is.numeric), ~ round(.x, 6))) |> 
+  relocate("p.value_education", .after = "education") |>
+  relocate("p.value_gdp", .after = "gdp") |>
+  relocate("p.value_investment", .after = "investment") |> 
+    relocate("p.value_poor00_06", .after = "poor00_06") |>
+  relocate("p.value_poor07_13", .after = "poor07_13") |>
+  relocate("p.value_poor14_20", .after = "poor14_20")
+# gdp mostly significant and negative
+# investment when significant is negative
+# education is a bit of a mess
+# binaries for poor are mostly non significant and incoherent signs
+solo_controls |> filter(p.value_gdp < 0.1) |> nrow()
+solo_controls |> filter(p.value_investment < 0.1) |> nrow()
+solo_controls |> filter(p.value_education < 0.1) |> nrow()
+mean(solo_controls$r_squared)
+
+# slight improvement in r-squared (primarly for abs model)
+```
+
+## 5) Only expenditure models
+
 
 
 
