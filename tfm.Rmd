@@ -708,7 +708,7 @@ min(education$YEAR)
 # education data is only from 2000 onward so I am probably only going to keep data from that year onward
 
 data <- data |> 
-  filter(Year >= 2000) |> 
+  # filter(Year >= 2000) |> 
   select(-`expenditure_1989-1993_budget`)
 ```
 
@@ -987,7 +987,8 @@ I have few missing data for unemployment and education only.
 data <- data |> 
   mutate(across(starts_with("expenditure"), ~ .x/population)) |> 
   mutate(unemployment = ((unemployment* 1000)/population)*1000) |> 
-  mutate(investment = (investment*1000000/population))
+  mutate(investment = (investment*1000000/population)) |> 
+  arrange(NUTS2_ID, Year)
 # Now I have:
 # 1) expenditure per capita
 # 2) number of unemployed per 1000 people
@@ -1143,41 +1144,254 @@ plot_missing(lagged_1_allgr)
 plot_missing(lagged_3_allgr)
 ```
 
+Autoregressive datasets
+
+```{r}
+auto <- data |> 
+  group_by(NUTS2_ID) |> 
+  mutate(lag_unemployment = lag(unemployment, 1)) |> 
+  ungroup()
+
+auto_gr <- data_gr |> 
+  group_by(NUTS2_ID) |> 
+  mutate(lag_unemployment = lag(unemployment, 1)) |> 
+  ungroup()
+
+auto_allgr <- data_allgr |> 
+  group_by(NUTS2_ID) |> 
+  mutate(lag_unemployment = lag(unemployment, 1)) |> 
+  ungroup()
+```
+
+Lagged dataset (both dependent and independent)
+
+```{r}
+lagged <- data |> 
+  group_by(NUTS2_ID) |> 
+  mutate(lag_unemployment = lag(unemployment, 1)) |> 
+  mutate(across(starts_with("expenditure"), 
+                ~lag(., 1),
+                .names = "{.col}_lag1")) |> 
+  mutate(across(starts_with("expenditure") & !ends_with("lag1"),
+                ~lag(., 3),
+                .names = "{.col}_lag3")) |>
+  ungroup()
+
+lagged_gr <- data_gr |> 
+  group_by(NUTS2_ID) |> 
+  mutate(lag_unemployment = lag(unemployment, 1)) |> 
+  mutate(across(starts_with("expenditure"), 
+                ~lag(., 1),
+                .names = "{.col}_lag1")) |> 
+  mutate(across(starts_with("expenditure") & !ends_with("lag1"),
+                ~lag(., 3),
+                .names = "{.col}_lag3")) |>
+  ungroup()
+
+lagged_allgr <- data_allgr |> 
+  group_by(NUTS2_ID) |> 
+  mutate(lag_unemployment = lag(unemployment, 1)) |> 
+  mutate(across(starts_with("expenditure"), 
+                ~lag(., 1),
+                .names = "{.col}_lag1")) |> 
+  mutate(across(starts_with("expenditure") & !ends_with("lag1"),
+                ~lag(., 3),
+                .names = "{.col}_lag3")) |>
+  ungroup()
+```
+
+Growth rates over long period of time
+
+```{r}
+gr_3 <- data |> 
+  group_by(NUTS2_ID) |> 
+  mutate(gdp = (gdp - lag(gdp, 2)) / lag(gdp, 2) * 100,
+         unemployment = (unemployment - lag(unemployment, 2)) / lag(unemployment, 2) * 100) |> 
+  mutate(across(starts_with("expenditure"),
+                ~lag(., 3),
+                .names = "{.col}_lag3")) |>
+  ungroup()
+  
+gr_5 <- data |> 
+  group_by(NUTS2_ID) |> 
+  mutate(gdp = (gdp - lag(gdp, 4)) / lag(gdp, 4) * 100,
+         unemployment = (unemployment - lag(unemployment, 4)) / lag(unemployment, 4) * 100) |> 
+  mutate(across(starts_with("expenditure"),
+                ~lag(., 5),
+                .names = "{.col}_lag5")) |>
+  ungroup() 
+
+gr_7 <- data |> 
+  group_by(NUTS2_ID) |> 
+  mutate(gdp = (gdp - lag(gdp, 6)) / lag(gdp, 6) * 100,
+         unemployment = (unemployment - lag(unemployment, 6)) / lag(unemployment, 6) * 100) |> 
+  mutate(across(starts_with("expenditure"),
+                ~lag(., 7),
+                .names = "{.col}_lag7")) |>
+  ungroup() 
+```
+
+Averages
+
+```{r}
+avg_3 <- data |> 
+  group_by(NUTS2_ID) |> 
+  mutate(
+    gdp = slider::slide_dbl(gdp, ~mean(.x, na.rm = TRUE), 
+                            .before = 2, .complete = FALSE),
+    unemployment = slider::slide_dbl(unemployment, ~mean(.x, na.rm = TRUE), 
+                                     .before = 2, .complete = FALSE),
+    across(
+      starts_with("expenditure"),
+      ~ slider::slide_dbl(.x, ~mean(.x, na.rm = TRUE), 
+                          .before = 2, .complete = FALSE),
+      .names = "{.col}_avg3"
+    )
+  ) |> 
+  ungroup()
+
+  
+avg_5 <- data |> 
+  group_by(NUTS2_ID) |> 
+  mutate(
+    gdp = slider::slide_dbl(gdp, ~mean(.x, na.rm = TRUE), 
+                            .before = 4, .complete = FALSE),
+    unemployment = slider::slide_dbl(unemployment, ~mean(.x, na.rm = TRUE), 
+                                     .before = 4, .complete = FALSE),
+    across(
+      starts_with("expenditure"),
+      ~ slider::slide_dbl(.x, ~mean(.x, na.rm = TRUE), 
+                          .before = 4, .complete = FALSE),
+      .names = "{.col}_avg5"
+    )
+  ) |> 
+  ungroup() 
+
+avg_7 <- data |> 
+  group_by(NUTS2_ID) |> 
+  mutate(
+    gdp = slider::slide_dbl(gdp, ~mean(.x, na.rm = TRUE), 
+                            .before = 6, .complete = FALSE),
+    unemployment = slider::slide_dbl(unemployment, ~mean(.x, na.rm = TRUE), 
+                                     .before = 6, .complete = FALSE),
+    across(
+      starts_with("expenditure"),
+      ~ slider::slide_dbl(.x, ~mean(.x, na.rm = TRUE), 
+                          .before = 6, .complete = FALSE),
+      .names = "{.col}_avg7"
+    )
+  ) |> 
+  ungroup()
+```
+
+GDP
+
+```{r}
+gr_gdp <- data |>
+  arrange(NUTS2_ID, Year) |> 
+  group_by(NUTS2_ID) |> 
+  mutate(gdp = (gdp - lag(gdp, 1)) / lag(gdp, 1) * 100)|>
+  mutate(unemployment = (unemployment - lag(unemployment, 1)) / lag(unemployment, 1) * 100)|>
+  ungroup()
+
+gr_gdp <- gr_gdp |>
+  filter(!is.na(unemployment)) |> 
+  filter(Year >= 2000)
+
+list_gr_gdp <- split(gr_gdp, gr_gdp$Year)
+list_gr_gdp <- map(list_gr_gdp, ~ .x[, colSums(!is.na(.x)) > 0])
+list_gr_gdp <- map(list_gr_gdp, ~ 
+  .x |> 
+    select(where(is.numeric)) |> 
+    select(-Year))
+```
+
 Filtering out rows with missing values for our dependent variable. R does complete case analysis when running regressions so it eliminates observations with missing values. Here I eliminate only rows with missing values in the dependent variable as those observations will never be useful in any of the models I try below (while I do not eliminate the rest as they could be useful in models where I use only covariates or only expenditure or etc.)
 
 ```{r}
 data <- data |>
-  filter(!is.na(unemployment))
+  filter(!is.na(unemployment)) |> 
+  filter(Year >= 2000)
 
 data_gr <- data_gr |>
-  filter(!is.na(unemployment))
+  filter(!is.na(unemployment)) |> 
+  filter(Year >= 2000)
 
 data_allgr <- data_allgr |>
-  filter(!is.na(unemployment))
+  filter(!is.na(unemployment)) |> 
+  filter(Year >= 2001)
 
 lagged_1 <- lagged_1 |> 
   filter(!is.na(unemployment)) |> 
-  filter(Year >= 2001)
+  filter(Year >= 2000)
 
 lagged_3 <- lagged_3 |> 
   filter(!is.na(unemployment)) |> 
-  filter(Year >= 2003)
+  filter(Year >= 2000)
 
 lagged_1_gr <- lagged_1_gr |> 
   filter(!is.na(unemployment)) |> 
-  filter(Year >= 2001)
+  filter(Year >= 2000)
 
 lagged_3_gr <- lagged_3_gr |> 
   filter(!is.na(unemployment)) |> 
-  filter(Year >= 2003)
+  filter(Year >= 2000)
 
 lagged_1_allgr <- lagged_1_allgr |> 
   filter(!is.na(unemployment)) |> 
-  filter(Year >= 2002)
+  filter(Year >= 2001)
 
 lagged_3_allgr <- lagged_3_allgr |> 
   filter(!is.na(unemployment)) |> 
-  filter(Year >= 2004)
+  filter(Year >= 2001)
+
+auto <- auto |> 
+  filter(!is.na(unemployment)) |> 
+  filter(Year >= 2000)
+
+auto_gr <- auto_gr |> 
+  filter(!is.na(unemployment)) |> 
+  filter(Year >= 2000)
+
+auto_allgr <- auto_allgr |> 
+  filter(!is.na(unemployment)) |> 
+  filter(Year >= 2001)
+
+lagged <- lagged |> 
+  filter(!is.na(unemployment)) |> 
+  filter(Year >= 2000)
+
+lagged_gr <- lagged_gr |> 
+  filter(!is.na(unemployment)) |> 
+  filter(Year >= 2000)
+
+lagged_allgr <- lagged_allgr |> 
+  filter(!is.na(unemployment)) |> 
+  filter(Year >= 2001)
+
+gr_3 <- gr_3 |> 
+  filter(!is.na(unemployment)) |> 
+  filter(Year >= 2000)
+
+gr_5 <- gr_5 |> 
+  filter(!is.na(unemployment)) |> 
+  filter(Year >= 2000)
+
+gr_7 <- gr_7 |> 
+  filter(!is.na(unemployment)) |> 
+  filter(Year >= 2001)
+
+avg_3 <- avg_3 |> 
+  filter(!is.na(unemployment)) |> 
+  filter(Year >= 2000)
+
+avg_5 <- avg_5 |> 
+  filter(!is.na(unemployment)) |> 
+  filter(Year >= 2000)
+
+avg_7 <- avg_7 |> 
+  filter(!is.na(unemployment)) |> 
+  filter(Year >= 2000)
 ```
 
 Splitting into 1 dataframe per year
@@ -1285,6 +1499,106 @@ list_lagged3_allgr_cleaned <- map(list_lagged3_allgr_cleaned, ~
     select(-Year))
 ```
 
+5) Autoregressive datasets
+
+```{r}
+list_auto <- split(auto, auto$Year)
+list_auto_cleaned <- map(list_auto, ~ .x[, colSums(!is.na(.x)) > 0])
+list_auto_cleaned <- map(list_auto_cleaned, ~ 
+  .x |> 
+    select(where(is.numeric)) |> 
+    select(-Year))
+
+list_auto_gr <- split(auto_gr, auto_gr$Year)
+list_auto_gr_cleaned <- map(list_auto_gr, ~ .x[, colSums(!is.na(.x)) > 0])
+list_auto_gr_cleaned <- map(list_auto_gr_cleaned, ~ 
+  .x |> 
+    select(where(is.numeric)) |> 
+    select(-Year))
+
+list_auto_allgr <- split(auto_allgr, auto_allgr$Year)
+list_auto_allgr_cleaned <- map(list_auto_allgr, ~ .x[, colSums(!is.na(.x)) > 0])
+list_auto_allgr_cleaned <- map(list_auto_allgr_cleaned, ~ 
+  .x |> 
+    select(where(is.numeric)) |> 
+    select(-Year))
+```
+
+6) Lagged dependent and independent
+
+```{r}
+list_lagged <- split(lagged, lagged$Year)
+list_lagged_cleaned <- map(list_lagged, ~ .x[, colSums(!is.na(.x)) > 0])
+list_lagged_cleaned <- map(list_lagged_cleaned, ~ 
+  .x |> 
+    select(where(is.numeric)) |> 
+    select(-Year))
+
+list_lagged_gr <- split(lagged_gr, lagged_gr$Year)
+list_lagged_gr_cleaned <- map(list_lagged_gr, ~ .x[, colSums(!is.na(.x)) > 0])
+list_lagged_gr_cleaned <- map(list_lagged_gr_cleaned, ~ 
+  .x |> 
+    select(where(is.numeric)) |> 
+    select(-Year))
+
+list_lagged_allgr <- split(lagged_allgr, lagged_allgr$Year)
+list_lagged_allgr_cleaned <- map(list_lagged_allgr, ~ .x[, colSums(!is.na(.x)) > 0])
+list_lagged_allgr_cleaned <- map(list_lagged_allgr_cleaned, ~ 
+  .x |> 
+    select(where(is.numeric)) |> 
+    select(-Year))
+```
+
+7) Growth rates over long period of time
+
+```{r}
+list_gr3 <- split(gr_3, gr_3$Year)
+list_gr3_cleaned <- map(list_gr3, ~ .x[, colSums(!is.na(.x)) > 0])
+list_gr3_cleaned <- map(list_gr3_cleaned, ~ 
+  .x |> 
+    select(where(is.numeric)) |> 
+    select(-Year))
+
+list_gr5 <- split(gr_5, gr_5$Year)
+list_gr5_cleaned <- map(list_gr5, ~ .x[, colSums(!is.na(.x)) > 0])
+list_gr5_cleaned <- map(list_gr5_cleaned, ~ 
+  .x |> 
+    select(where(is.numeric)) |> 
+    select(-Year))
+
+list_gr7 <- split(gr_7, gr_7$Year)
+list_gr7_cleaned <- map(list_gr7, ~ .x[, colSums(!is.na(.x)) > 0])
+list_gr7_cleaned <- map(list_gr7_cleaned, ~ 
+  .x |> 
+    select(where(is.numeric)) |> 
+    select(-Year))
+```
+
+8) Averages over long period of time
+
+```{r}
+list_avg3 <- split(avg_3, avg_3$Year)
+list_avg3_cleaned <- map(list_avg3, ~ .x[, colSums(!is.na(.x)) > 0])
+list_avg3_cleaned <- map(list_avg3_cleaned, ~ 
+  .x |> 
+    select(where(is.numeric)) |> 
+    select(-Year))
+
+list_avg5 <- split(avg_5, avg_5$Year)
+list_avg5_cleaned <- map(list_avg5, ~ .x[, colSums(!is.na(.x)) > 0])
+list_avg5_cleaned <- map(list_avg5_cleaned, ~ 
+  .x |> 
+    select(where(is.numeric)) |> 
+    select(-Year))
+
+list_avg7 <- split(avg_7, avg_7$Year)
+list_avg7_cleaned <- map(list_avg7, ~ .x[, colSums(!is.na(.x)) > 0])
+list_avg7_cleaned <- map(list_avg7_cleaned, ~ 
+  .x |> 
+    select(where(is.numeric)) |> 
+    select(-Year))
+```
+
 # Models
 
 ## 1) Model using absolute value of unemployment
@@ -1340,6 +1654,7 @@ mean(ab$r_squared)
 ab |> filter(p.value_gdp < 0.1) |> nrow()
 ab |> filter(p.value_investment < 0.1) |> nrow()
 ab |> filter(p.value_education < 0.1) |> nrow()
+sum(ab$"`expenditure_1994-1999_budget`" < 0, na.rm = TRUE) + sum(ab$"`expenditure_2000-2006_budget`" < 0, na.rm = TRUE) + sum(ab$"`expenditure_2007-2013_budget`" < 0, na.rm = TRUE) + sum(ab$"`expenditure_2014-2020_budget`" < 0, na.rm = TRUE)
 ```
 
 
@@ -1389,6 +1704,7 @@ mean(gr$r_squared)
 gr |> filter(p.value_gdp < 0.1) |> nrow()
 gr |> filter(p.value_investment < 0.1) |> nrow()
 gr |> filter(p.value_education < 0.1) |> nrow()
+sum(gr$"`expenditure_1994-1999_budget`" < 0, na.rm = TRUE) + sum(gr$"`expenditure_2000-2006_budget`" < 0, na.rm = TRUE) + sum(gr$"`expenditure_2007-2013_budget`" < 0, na.rm = TRUE) + sum(gr$"`expenditure_2014-2020_budget`" < 0, na.rm = TRUE)
 ```
 
 ## 3) All growth rates
@@ -1437,12 +1753,16 @@ mean(allgr$r_squared)
 allgr |> filter(p.value_gdp < 0.1) |> nrow()
 allgr |> filter(p.value_investment < 0.1) |> nrow()
 allgr |> filter(p.value_education < 0.1) |> nrow()
+sum(allgr$"`expenditure_1994-1999_budget`" < 0, na.rm = TRUE) + sum(allgr$"`expenditure_2000-2006_budget`" < 0, na.rm = TRUE) + sum(allgr$"`expenditure_2007-2013_budget`" < 0, na.rm = TRUE) + sum(allgr$"`expenditure_2014-2020_budget`" < 0, na.rm = TRUE)
 ```
 
 ## 4) Only controls model
 
+4.1 GDP only
+
+4.1.1
+
 ```{r}
-# GDP
 regression1 <- map(list_data_cleaned, ~ lm(unemployment ~ gdp, data = .x))
 rsquared <- map_dbl(regression1, ~ summary(.x)$r.squared)
 solo_gdp <- tibble(
@@ -1462,7 +1782,11 @@ solo_gdp <- solo_gdp |>
 # GDP is constantly significant and negative when predicting absolute unemployment values
 solo_gdp |> filter(p.value < 0.1) |> nrow()
 mean(solo_gdp$r_squared)
+```
 
+4.1.2
+
+```{r}
 regression1_gr <- map(list_data_gr_cleaned, ~ lm(unemployment ~ gdp, data = .x))
 rsquared <- map_dbl(regression1_gr, ~ summary(.x)$r.squared)
 solo_gdp_gr <- tibble(
@@ -1479,11 +1803,14 @@ coefficients <- map_dfr(
 solo_gdp_gr <- solo_gdp_gr |> 
   left_join(coefficients, by = "year") |> 
   mutate(across(where(is.numeric), ~ round(.x, 6)))
-# GDP is rarely significant and never negative when predicting growth rate of unemployment
+# GDP is less significant and never negative when predicting growth rate of unemployment
 solo_gdp_gr |> filter(p.value < 0.1) |> nrow()
 mean(solo_gdp_gr$r_squared)
+```
 
+4.1.3
 
+```{r}
 regression1_allgr <- map(list_data_allgr_cleaned, ~ lm(unemployment ~ gdp, data = .x))
 rsquared <- map_dbl(regression1_allgr, ~ summary(.x)$r.squared)
 solo_gdp_allgr <- tibble(
@@ -1507,8 +1834,11 @@ mean(solo_gdp_allgr$r_squared)
 # It seems like the best models both in terms of R-squared and expected coefficients are abs and allgr
 ```
 
+4.2 Investment only
+
+4.2.1
+
 ```{r}
-# Investment
 regression1 <- map(list_data_cleaned, ~ lm(unemployment ~ investment, data = .x))
 rsquared <- map_dbl(regression1, ~ summary(.x)$r.squared)
 solo_investment <- tibble(
@@ -1528,8 +1858,11 @@ solo_investment <- solo_investment |>
 # Investment is constantly significant and negative when predicting absolute unemployment values
 solo_investment |> filter(p.value < 0.1) |> nrow()
 mean(solo_investment$r_squared)
+```
 
+4.2.2
 
+```{r}
 regression1_gr <- map(list_data_gr_cleaned, ~ lm(unemployment ~ investment, data = .x))
 rsquared <- map_dbl(regression1_gr, ~ summary(.x)$r.squared)
 solo_investment_gr <- tibble(
@@ -1549,8 +1882,11 @@ solo_investment_gr <- solo_investment_gr |>
 # Investment is sometimes significant and often negative when significant. Predicting growth rate of unemployment
 solo_investment_gr |> filter(p.value < 0.1) |> nrow()
 mean(solo_investment_gr$r_squared)
+```
 
+4.2.3
 
+```{r}
 regression1_allgr <- map(list_data_allgr_cleaned, ~ lm(unemployment ~ investment, data = .x))
 rsquared <- map_dbl(regression1_allgr, ~ summary(.x)$r.squared)
 solo_investment_allgr <- tibble(
@@ -1574,8 +1910,11 @@ mean(solo_investment_allgr$r_squared)
 # It seems like here the best model is absolute values
 ```
 
+4.3 Education only
+
+4.3.1
+
 ```{r}
-# Education
 regression1 <- map(list_data_cleaned, ~ lm(unemployment ~ education, data = .x))
 rsquared <- map_dbl(regression1, ~ summary(.x)$r.squared)
 solo_education <- tibble(
@@ -1595,8 +1934,11 @@ solo_education <- solo_education |>
 # education is rarely significant and mostly negative when predicting absolute unemployment values
 solo_education |> filter(p.value < 0.1) |> nrow()
 mean(solo_education$r_squared)
+```
 
+4.3.2
 
+```{r}
 regression1_gr <- map(list_data_gr_cleaned, ~ lm(unemployment ~ education, data = .x))
 rsquared <- map_dbl(regression1_gr, ~ summary(.x)$r.squared)
 solo_education_gr <- tibble(
@@ -1616,8 +1958,11 @@ solo_education_gr <- solo_education_gr |>
 # education is sometimes significant but no consistent sign when predicting growth rate of unemployment
 solo_education_gr |> filter(p.value < 0.1) |> nrow()
 mean(solo_education_gr$r_squared)
+```
 
+4.3.3
 
+```{r}
 regression1_allgr <- map(list_data_allgr_cleaned, ~ lm(unemployment ~ education, data = .x))
 rsquared <- map_dbl(regression1_allgr, ~ summary(.x)$r.squared)
 solo_education_allgr <- tibble(
@@ -1641,8 +1986,105 @@ mean(solo_education_gr$r_squared)
 # Education does not seem to be a really relevant variable
 ```
 
+4.4 Only poor binaries 
+
+4.4.1
+
 ```{r}
-# gdp + poor binaries
+regression1 <- map(list_data_cleaned, function(df) {
+  # Find column names that start with "poor"
+  poor_vars <- names(df)[startsWith(names(df), "poor")]
+
+  # Build the regression formula
+  formula <- as.formula(paste("unemployment ~", paste(poor_vars, collapse = " + ")))
+
+  # Run regression
+  lm(formula, data = df)
+})
+rsquared <- map_dbl(regression1, ~ summary(.x)$r.squared)
+solo_controls <- tibble(
+  year = names(rsquared),
+  r_squared = as.numeric(rsquared)
+)
+coefficients <- map_dfr(
+  regression1,
+  ~ broom::tidy(.x), 
+  .id = "year") |> 
+  filter(term != "(Intercept)") |> 
+  select(year, term, estimate) |>
+  pivot_wider(names_from = term, values_from = estimate)
+pvals <- map_dfr(
+  regression1,
+  ~ broom::tidy(.x), 
+  .id = "year") |> 
+  filter(term != "(Intercept)") |> 
+  select(year, term, p.value) |> 
+  pivot_wider(names_from = term, values_from = p.value, names_prefix = "p.value_")
+solo_controls <- solo_controls |> 
+  left_join(coefficients, by = "year") |> 
+  left_join(pvals, by = "year") |>
+  mutate(across(where(is.numeric), ~ round(.x, 6))) |> 
+  # relocate("p.value_education", .after = "education") |>
+  # relocate("p.value_gdp", .after = "gdp") |>
+  # relocate("p.value_investment", .after = "investment") |> 
+    relocate("p.value_poor00_06", .after = "poor00_06") |>
+  relocate("p.value_poor07_13", .after = "poor07_13") |>
+  relocate("p.value_poor14_20", .after = "poor14_20")
+# when significant (2 periods out of 3) poor is positive
+mean(solo_controls$r_squared)
+```
+
+4.4.2
+
+```{r}
+regression1 <- map(list_data_gr_cleaned, function(df) {
+  # Find column names that start with "poor"
+  poor_vars <- names(df)[startsWith(names(df), "poor")]
+
+  # Build the regression formula
+  formula <- as.formula(paste("unemployment ~", paste(poor_vars, collapse = " + ")))
+
+  # Run regression
+  lm(formula, data = df)
+})
+rsquared <- map_dbl(regression1, ~ summary(.x)$r.squared)
+solo_controls <- tibble(
+  year = names(rsquared),
+  r_squared = as.numeric(rsquared)
+)
+coefficients <- map_dfr(
+  regression1,
+  ~ broom::tidy(.x), 
+  .id = "year") |> 
+  filter(term != "(Intercept)") |> 
+  select(year, term, estimate) |>
+  pivot_wider(names_from = term, values_from = estimate)
+pvals <- map_dfr(
+  regression1,
+  ~ broom::tidy(.x), 
+  .id = "year") |> 
+  filter(term != "(Intercept)") |> 
+  select(year, term, p.value) |> 
+  pivot_wider(names_from = term, values_from = p.value, names_prefix = "p.value_")
+solo_controls <- solo_controls |> 
+  left_join(coefficients, by = "year") |> 
+  left_join(pvals, by = "year") |>
+  mutate(across(where(is.numeric), ~ round(.x, 6))) |> 
+  # relocate("p.value_education", .after = "education") |>
+  # relocate("p.value_gdp", .after = "gdp") |>
+  # relocate("p.value_investment", .after = "investment") |> 
+  relocate("p.value_poor00_06", .after = "poor00_06") |>
+  relocate("p.value_poor07_13", .after = "poor07_13") |>
+  relocate("p.value_poor14_20", .after = "poor14_20")
+# when significant (50%) usually negative
+mean(solo_controls$r_squared)
+```
+
+4.5 GDP + dummy poor
+
+4.5.1
+
+```{r}
 regression1 <- map(list_data_cleaned, function(df) {
   # Find column names that start with "poor"
   poor_vars <- names(df)[startsWith(names(df), "poor")]
@@ -1686,8 +2128,11 @@ solo_controls <- solo_controls |>
 # poor are significant and positive for early 2000, insignifacant for middle 200s, significant and negative for 2010s
 solo_controls |> filter(p.value_gdp < 0.1) |> nrow()
 mean(solo_controls$r_squared)
+```
 
+4.5.2
 
+```{r}
 regression1 <- map(list_data_gr_cleaned, function(df) {
   # Find column names that start with "poor"
   poor_vars <- names(df)[startsWith(names(df), "poor")]
@@ -1730,8 +2175,11 @@ solo_controls <- solo_controls |>
 # gdp rarely significant, poor mostly negative
 solo_controls |> filter(p.value_gdp < 0.1) |> nrow()
 mean(solo_controls$r_squared)
+```
 
+4.5.3
 
+```{r}
 regression1 <- map(list_data_allgr_cleaned, function(df) {
   # Find column names that start with "poor"
   poor_vars <- names(df)[startsWith(names(df), "poor")]
@@ -1779,8 +2227,11 @@ mean(solo_controls$r_squared)
 # not sure if poor binaries help that much
 ```
 
+4.6 GDP+Investment
+
+4.6.1
+
 ```{r}
-# GDP+Investment 
 regression1 <- map(list_data_cleaned, ~ lm(unemployment ~ gdp + investment, data = .x))
 rsquared <- map_dbl(regression1, ~ summary(.x)$r.squared)
 solo_controls <- tibble(
@@ -1812,8 +2263,11 @@ solo_controls <- solo_controls |>
 solo_controls |> filter(p.value_gdp < 0.1) |> nrow()
 solo_controls |> filter(p.value_investment < 0.1) |> nrow()
 mean(solo_controls$r_squared)
+```
 
+4.6.2
 
+```{r}
 regression1 <- map(list_data_gr_cleaned, ~ lm(unemployment ~ gdp + investment, data = .x))
 rsquared <- map_dbl(regression1, ~ summary(.x)$r.squared)
 solo_controls <- tibble(
@@ -1845,8 +2299,11 @@ solo_controls <- solo_controls |>
 solo_controls |> filter(p.value_gdp < 0.1) |> nrow()
 solo_controls |> filter(p.value_investment < 0.1) |> nrow()
 mean(solo_controls$r_squared)
+```
 
+4.6.3
 
+```{r}
 regression1 <- map(list_data_allgr_cleaned, ~ lm(unemployment ~ gdp + investment, data = .x))
 rsquared <- map_dbl(regression1, ~ summary(.x)$r.squared)
 solo_controls <- tibble(
@@ -1882,6 +2339,10 @@ mean(solo_controls$r_squared)
 
 # The best models seem again to be abs and allgr (improving around 0.02 r-squared with investment when compared to only gdp)
 ```
+
+4.7 GDP + investment + poor binaries
+
+4.7.1
 
 ```{r}
 # Adding poor binaries
@@ -1924,12 +2385,17 @@ solo_controls <- solo_controls |>
     relocate("p.value_poor00_06", .after = "poor00_06") |>
   relocate("p.value_poor07_13", .after = "poor07_13") |>
   relocate("p.value_poor14_20", .after = "poor14_20")
-# Not much changes putting in also the poor binaries, investment is predominantly significant, while gdp is rarely significant (a bit more now than before). Poor binaries are primarly significant and with the right sign excpet for 07-13
+# Not much changes putting in also the poor binaries
+# investment is predominantly significant, while gdp is rarely significant (a bit more now than before). 
+# Poor binaries are primarly significant and with the right sign excpet for 07-13
 solo_controls |> filter(p.value_gdp < 0.1) |> nrow()
 solo_controls |> filter(p.value_investment < 0.1) |> nrow()
 mean(solo_controls$r_squared)
+```
 
+4.7.2
 
+```{r}
 regression1 <- map(list_data_gr_cleaned, function(df) {
   # Find column names that start with "poor"
   poor_vars <- names(df)[startsWith(names(df), "poor")]
@@ -1974,8 +2440,11 @@ solo_controls <- solo_controls |>
 solo_controls |> filter(p.value_gdp < 0.1) |> nrow()
 solo_controls |> filter(p.value_investment < 0.1) |> nrow()
 mean(solo_controls$r_squared)
+```
 
+4.7.3
 
+```{r}
 regression1 <- map(list_data_allgr_cleaned, function(df) {
   # Find column names that start with "poor"
   poor_vars <- names(df)[startsWith(names(df), "poor")]
@@ -2025,6 +2494,10 @@ mean(solo_controls$r_squared)
 # slight improvements with poor binaries, improve mostly the abs model
 ```
 
+4.8 All controls (no expenditure)
+
+4.8.1
+
 ```{r}
 # Adding also education
 regression1 <- map(list_data_cleaned, function(df) {
@@ -2066,13 +2539,18 @@ solo_controls <- solo_controls |>
     relocate("p.value_poor00_06", .after = "poor00_06") |>
   relocate("p.value_poor07_13", .after = "poor07_13") |>
   relocate("p.value_poor14_20", .after = "poor14_20")
-# Adding education makes gdp even a bit more significant, while investment looses a bit of significance. Education is mostly significant and with the right sign. Poor binaries are primarly significant but their coefficient completely changes from 2010 on
+# Adding education makes gdp even a bit more significant, while investment looses a bit of significance. 
+# Education is mostly significant and with the right sign. 
+# Poor binaries are primarly significant but their coefficient completely changes from 2010 on
 solo_controls |> filter(p.value_gdp < 0.1) |> nrow()
 solo_controls |> filter(p.value_investment < 0.1) |> nrow()
 solo_controls |> filter(p.value_education < 0.1) |> nrow()
 mean(solo_controls$r_squared)
+```
 
+4.8.2
 
+```{r}
 regression1 <- map(list_data_gr_cleaned, function(df) {
   # Find column names that start with "poor"
   poor_vars <- names(df)[startsWith(names(df), "poor")]
@@ -2118,8 +2596,11 @@ solo_controls |> filter(p.value_gdp < 0.1) |> nrow()
 solo_controls |> filter(p.value_investment < 0.1) |> nrow()
 solo_controls |> filter(p.value_education < 0.1) |> nrow()
 mean(solo_controls$r_squared)
+```
 
+4.8.3
 
+```{r}
 regression1 <- map(list_data_allgr_cleaned, function(df) {
   # Find column names that start with "poor"
   poor_vars <- names(df)[startsWith(names(df), "poor")]
@@ -2202,7 +2683,9 @@ no_controls_allgr_lag3 <- map(list_lagged3_allgr_cleaned, ~ .x |>
                      select(starts_with("expenditure"), unemployment))
 ```
 
-Absolute terms
+5.1 Absolute terms
+
+5.1.1
 
 ```{r}
 # no lag
@@ -2239,8 +2722,12 @@ mean(nc$`\`expenditure_1994-1999_budget\``, na.rm = TRUE)
 mean(nc$`\`expenditure_2000-2006_budget\``, na.rm = TRUE)
 mean(nc$`\`expenditure_2007-2013_budget\``, na.rm = TRUE)
 mean(nc$`\`expenditure_2014-2020_budget\``, na.rm = TRUE)
+sum(nc$"`expenditure_1994-1999_budget`" < 0, na.rm = TRUE) + sum(nc$"`expenditure_2000-2006_budget`" < 0, na.rm = TRUE) + sum(nc$"`expenditure_2007-2013_budget`" < 0, na.rm = TRUE) + sum(nc$"`expenditure_2014-2020_budget`" < 0, na.rm = TRUE)
+```
 
+5.1.2
 
+```{r}
 # lagged 1
 regression_nc <- map(no_controls_lag1, ~ lm(unemployment ~ ., data = .x))
 
@@ -2275,8 +2762,12 @@ mean(nc$`\`expenditure_1994-1999_budget_lag1\``, na.rm = TRUE)
 mean(nc$`\`expenditure_2000-2006_budget_lag1\``, na.rm = TRUE)
 mean(nc$`\`expenditure_2007-2013_budget_lag1\``, na.rm = TRUE)
 mean(nc$`\`expenditure_2014-2020_budget_lag1\``, na.rm = TRUE)
+sum(nc$"`expenditure_1994-1999_budget_lag1`" < 0, na.rm = TRUE) + sum(nc$"`expenditure_2000-2006_budget_lag1`" < 0, na.rm = TRUE) + sum(nc$"`expenditure_2007-2013_budget_lag1`" < 0, na.rm = TRUE) + sum(nc$"`expenditure_2014-2020_budget_lag1`" < 0, na.rm = TRUE)
+```
 
+5.1.3
 
+```{r}
 # lagged 3
 regression_nc <- map(no_controls_lag3, ~ lm(unemployment ~ ., data = .x))
 
@@ -2311,9 +2802,12 @@ mean(nc$`\`expenditure_1994-1999_budget_lag3\``, na.rm = TRUE)
 mean(nc$`\`expenditure_2000-2006_budget_lag3\``, na.rm = TRUE)
 mean(nc$`\`expenditure_2007-2013_budget_lag3\``, na.rm = TRUE)
 mean(nc$`\`expenditure_2014-2020_budget_lag3\``, na.rm = TRUE)
+sum(nc$"`expenditure_1994-1999_budget_lag3`" < 0, na.rm = TRUE) + sum(nc$"`expenditure_2000-2006_budget_lag3`" < 0, na.rm = TRUE) + sum(nc$"`expenditure_2007-2013_budget_lag3`" < 0, na.rm = TRUE) + sum(nc$"`expenditure_2014-2020_budget_lag3`" < 0, na.rm = TRUE)
 ```
 
-Growth rates
+5.2 Growth rates
+
+5.2.1
 
 ```{r}
 # no lag
@@ -2350,8 +2844,12 @@ mean(nc$`\`expenditure_1994-1999_budget\``, na.rm = TRUE)
 mean(nc$`\`expenditure_2000-2006_budget\``, na.rm = TRUE)
 mean(nc$`\`expenditure_2007-2013_budget\``, na.rm = TRUE)
 mean(nc$`\`expenditure_2014-2020_budget\``, na.rm = TRUE)
+sum(nc$"`expenditure_1994-1999_budget`" < 0, na.rm = TRUE) + sum(nc$"`expenditure_2000-2006_budget`" < 0, na.rm = TRUE) + sum(nc$"`expenditure_2007-2013_budget`" < 0, na.rm = TRUE) + sum(nc$"`expenditure_2014-2020_budget`" < 0, na.rm = TRUE)
+```
 
+5.2.2
 
+```{r}
 # lagged 1
 regression_nc <- map(no_controls_gr_lag1, ~ lm(unemployment ~ ., data = .x))
 
@@ -2386,8 +2884,12 @@ mean(nc$`\`expenditure_1994-1999_budget_lag1\``, na.rm = TRUE)
 mean(nc$`\`expenditure_2000-2006_budget_lag1\``, na.rm = TRUE)
 mean(nc$`\`expenditure_2007-2013_budget_lag1\``, na.rm = TRUE)
 mean(nc$`\`expenditure_2014-2020_budget_lag1\``, na.rm = TRUE)
+sum(nc$"`expenditure_1994-1999_budget_lag1`" < 0, na.rm = TRUE) + sum(nc$"`expenditure_2000-2006_budget_lag1`" < 0, na.rm = TRUE) + sum(nc$"`expenditure_2007-2013_budget_lag1`" < 0, na.rm = TRUE) + sum(nc$"`expenditure_2014-2020_budget_lag1`" < 0, na.rm = TRUE)
+```
 
+5.2.3
 
+```{r}
 # lagged 3
 regression_nc <- map(no_controls_gr_lag3, ~ lm(unemployment ~ ., data = .x))
 
@@ -2422,9 +2924,12 @@ mean(nc$`\`expenditure_1994-1999_budget_lag3\``, na.rm = TRUE)
 mean(nc$`\`expenditure_2000-2006_budget_lag3\``, na.rm = TRUE)
 mean(nc$`\`expenditure_2007-2013_budget_lag3\``, na.rm = TRUE)
 mean(nc$`\`expenditure_2014-2020_budget_lag3\``, na.rm = TRUE)
+sum(nc$"`expenditure_1994-1999_budget_lag3`" < 0, na.rm = TRUE) + sum(nc$"`expenditure_2000-2006_budget_lag3`" < 0, na.rm = TRUE) + sum(nc$"`expenditure_2007-2013_budget_lag3`" < 0, na.rm = TRUE) + sum(nc$"`expenditure_2014-2020_budget_lag3`" < 0, na.rm = TRUE)
 ```
 
-All growth rates
+5.3 All growth rates
+
+5.3.1
 
 ```{r}
 # no lag
@@ -2461,8 +2966,12 @@ mean(nc$`\`expenditure_1994-1999_budget\``, na.rm = TRUE)
 mean(nc$`\`expenditure_2000-2006_budget\``, na.rm = TRUE)
 mean(nc$`\`expenditure_2007-2013_budget\``, na.rm = TRUE)
 mean(nc$`\`expenditure_2014-2020_budget\``, na.rm = TRUE)
+sum(nc$"`expenditure_1994-1999_budget`" < 0, na.rm = TRUE) + sum(nc$"`expenditure_2000-2006_budget`" < 0, na.rm = TRUE) + sum(nc$"`expenditure_2007-2013_budget`" < 0, na.rm = TRUE) + sum(nc$"`expenditure_2014-2020_budget`" < 0, na.rm = TRUE)
+```
 
+5.3.2
 
+```{r}
 # lagged 1
 regression_nc <- map(no_controls_allgr_lag1, ~ lm(unemployment ~ ., data = .x))
 
@@ -2497,8 +3006,12 @@ mean(nc$`\`expenditure_1994-1999_budget_lag1\``, na.rm = TRUE)
 mean(nc$`\`expenditure_2000-2006_budget_lag1\``, na.rm = TRUE)
 mean(nc$`\`expenditure_2007-2013_budget_lag1\``, na.rm = TRUE)
 mean(nc$`\`expenditure_2014-2020_budget_lag1\``, na.rm = TRUE)
+sum(nc$"`expenditure_1994-1999_budget_lag1`" < 0, na.rm = TRUE) + sum(nc$"`expenditure_2000-2006_budget_lag1`" < 0, na.rm = TRUE) + sum(nc$"`expenditure_2007-2013_budget_lag1`" < 0, na.rm = TRUE) + sum(nc$"`expenditure_2014-2020_budget_lag1`" < 0, na.rm = TRUE)
+```
 
+5.3.3
 
+```{r}
 # lagged 3
 regression_nc <- map(no_controls_allgr_lag3, ~ lm(unemployment ~ ., data = .x))
 
@@ -2533,45 +3046,1075 @@ mean(nc$`\`expenditure_1994-1999_budget_lag3\``, na.rm = TRUE)
 mean(nc$`\`expenditure_2000-2006_budget_lag3\``, na.rm = TRUE)
 mean(nc$`\`expenditure_2007-2013_budget_lag3\``, na.rm = TRUE)
 mean(nc$`\`expenditure_2014-2020_budget_lag3\``, na.rm = TRUE)
+sum(nc$"`expenditure_1994-1999_budget_lag3`" < 0, na.rm = TRUE) + sum(nc$"`expenditure_2000-2006_budget_lag3`" < 0, na.rm = TRUE) + sum(nc$"`expenditure_2007-2013_budget_lag3`" < 0, na.rm = TRUE) + sum(nc$"`expenditure_2014-2020_budget_lag3`" < 0, na.rm = TRUE)
 ```
 
-Lag the dependent variable (growth rate of unemployment)
+## 6) Autoregressive model
 
-Use GDP instead of unemployment
+6.1
+
+```{r}
+# Absolute terms
+regression_auto <- map(list_auto_cleaned, function(df) {
+  # Find column names that start with "expenditure"
+  exp_vars <- names(df)[startsWith(names(df), "expenditure")]
+
+  # Build the regression formula
+  formula <- as.formula(paste("unemployment ~ lag_unemployment +",
+                              paste0("`", exp_vars, "`", collapse = " + ")))
+
+  # Run regression
+  lm(formula, data = df)
+})
+
+rsquared <- map_dbl(regression_auto, ~ summary(.x)$r.squared)
+autoreg <- tibble(
+  year = names(rsquared),
+  r_squared = as.numeric(rsquared)
+)
+
+coefficients <- map_dfr(regression_auto, ~ broom::tidy(.x), .id = "year") |> 
+  filter(term != "(Intercept)") |> 
+  select(year, term, estimate) |>
+  pivot_wider(names_from = term, values_from = estimate)
+pvals <- map_dfr(regression_auto, ~ broom::tidy(.x), .id = "year") |> 
+  filter(term != "(Intercept)") |> 
+  select(year, term, p.value) |> 
+  pivot_wider(names_from = term, values_from = p.value, names_prefix = "p.value_")
+
+autoreg <- autoreg |> 
+  left_join(coefficients, by = "year") |> 
+  left_join(pvals, by = "year") |>
+  mutate(across(where(is.numeric), ~ round(.x, 6))) |> 
+  relocate("`expenditure_2007-2013_budget`", .after = "`expenditure_2000-2006_budget`") |>
+  relocate("`expenditure_2014-2020_budget`", .after = "`expenditure_2007-2013_budget`") |>
+  # relocate("p.value_education", .after = "education") |>
+  # relocate("p.value_gdp", .after = "gdp") |>
+  # relocate("p.value_investment", .after = "investment") |> 
+  relocate("p.value_`expenditure_1994-1999_budget`", .after = "`expenditure_1994-1999_budget`") |> 
+  relocate("p.value_`expenditure_2000-2006_budget`", .after = "`expenditure_2000-2006_budget`") |>
+  relocate("p.value_`expenditure_2007-2013_budget`", .after = "`expenditure_2007-2013_budget`") |>
+  relocate("p.value_`expenditure_2014-2020_budget`", .after = "`expenditure_2014-2020_budget`") |> 
+  # relocate("p.value_poor00_06", .after = "poor00_06") |>
+  # relocate("p.value_poor07_13", .after = "poor07_13") |>
+  # relocate("p.value_poor14_20", .after = "poor14_20") |> 
+  relocate("p.value_lag_unemployment", .after = "lag_unemployment")
+
+# r-squared clearly much higher, with lag unemployment very significant, but expenditure is still rarely significant and positive most of the times 
+mean(autoreg$r_squared)
+mean(autoreg$`\`expenditure_1994-1999_budget\``, na.rm = TRUE)
+mean(autoreg$`\`expenditure_2000-2006_budget\``, na.rm = TRUE)
+mean(autoreg$`\`expenditure_2007-2013_budget\``, na.rm = TRUE)
+mean(autoreg$`\`expenditure_2014-2020_budget\``, na.rm = TRUE)
+sum(autoreg$"`expenditure_1994-1999_budget`" < 0, na.rm = TRUE) + sum(autoreg$"`expenditure_2000-2006_budget`" < 0, na.rm = TRUE) + sum(autoreg$"`expenditure_2007-2013_budget`" < 0, na.rm = TRUE) + sum(autoreg$"`expenditure_2014-2020_budget`" < 0, na.rm = TRUE)
+```
+
+6.2
+
+```{r}
+# Un growth rate
+regression_auto_gr <- map(list_auto_gr_cleaned, function(df) {
+  # Find column names that start with "expenditure"
+  exp_vars <- names(df)[startsWith(names(df), "expenditure")]
+
+  # Build the regression formula
+  formula <- as.formula(paste("unemployment ~ lag_unemployment +",
+                              paste0("`", exp_vars, "`", collapse = " + ")))
+
+  # Run regression
+  lm(formula, data = df)
+})
+
+rsquared <- map_dbl(regression_auto_gr, ~ summary(.x)$r.squared)
+autoreg_gr <- tibble(
+  year = names(rsquared),
+  r_squared = as.numeric(rsquared)
+)
+
+coefficients <- map_dfr(regression_auto_gr, ~ broom::tidy(.x), .id = "year") |> 
+  filter(term != "(Intercept)") |> 
+  select(year, term, estimate) |>
+  pivot_wider(names_from = term, values_from = estimate)
+pvals <- map_dfr(regression_auto_gr, ~ broom::tidy(.x), .id = "year") |> 
+  filter(term != "(Intercept)") |> 
+  select(year, term, p.value) |> 
+  pivot_wider(names_from = term, values_from = p.value, names_prefix = "p.value_")
+
+autoreg_gr <- autoreg_gr |> 
+  left_join(coefficients, by = "year") |> 
+  left_join(pvals, by = "year") |>
+  mutate(across(where(is.numeric), ~ round(.x, 6))) |> 
+  relocate("`expenditure_2007-2013_budget`", .after = "`expenditure_2000-2006_budget`") |>
+  relocate("`expenditure_2014-2020_budget`", .after = "`expenditure_2007-2013_budget`") |>
+  # relocate("p.value_education", .after = "education") |>
+  # relocate("p.value_gdp", .after = "gdp") |>
+  # relocate("p.value_investment", .after = "investment") |>
+  relocate("p.value_`expenditure_1994-1999_budget`", .after = "`expenditure_1994-1999_budget`") |> 
+  relocate("p.value_`expenditure_2000-2006_budget`", .after = "`expenditure_2000-2006_budget`") |>
+  relocate("p.value_`expenditure_2007-2013_budget`", .after = "`expenditure_2007-2013_budget`") |>
+  relocate("p.value_`expenditure_2014-2020_budget`", .after = "`expenditure_2014-2020_budget`") |> 
+  # relocate("p.value_poor00_06", .after = "poor00_06") |>
+  # relocate("p.value_poor07_13", .after = "poor07_13") |>
+  # relocate("p.value_poor14_20", .after = "poor14_20") |>
+  relocate("p.value_lag_unemployment", .after = "lag_unemployment")
+
+# lag unemployment in gr not always significant
+# expenditure not always significant, coefficients mainly negative, but also positive 
+mean(autoreg_gr$r_squared)
+mean(autoreg_gr$`\`expenditure_1994-1999_budget\``, na.rm = TRUE)
+mean(autoreg_gr$`\`expenditure_2000-2006_budget\``, na.rm = TRUE)
+mean(autoreg_gr$`\`expenditure_2007-2013_budget\``, na.rm = TRUE)
+mean(autoreg_gr$`\`expenditure_2014-2020_budget\``, na.rm = TRUE)
+sum(autoreg_gr$"`expenditure_1994-1999_budget`" < 0, na.rm = TRUE) + sum(autoreg_gr$"`expenditure_2000-2006_budget`" < 0, na.rm = TRUE) + sum(autoreg_gr$"`expenditure_2007-2013_budget`" < 0, na.rm = TRUE) + sum(autoreg_gr$"`expenditure_2014-2020_budget`" < 0, na.rm = TRUE)
+```
+
+## 7) Lagged dependent and independent 
+
+7.1 Absolute terms
+
+7.1.1
+
+```{r}
+# lag-1
+regression_lagged <- map(list_lagged_cleaned, function(df) {
+  # Find column names that start with "expenditure"
+  exp_vars <- names(df)[startsWith(names(df), "expenditure") & 
+                          endsWith(names(df), "_lag1")]
+
+  # Build the regression formula
+  formula <- as.formula(paste("unemployment ~ lag_unemployment +",
+                              paste0("`", exp_vars, "`", collapse = " + ")))
+
+  # Run regression
+  lm(formula, data = df)
+})
+
+rsquared <- map_dbl(regression_lagged, ~ summary(.x)$r.squared)
+lagged <- tibble(
+  year = names(rsquared),
+  r_squared = as.numeric(rsquared)
+)
+
+coefficients <- map_dfr(regression_lagged, ~ broom::tidy(.x), .id = "year") |> 
+  filter(term != "(Intercept)") |> 
+  select(year, term, estimate) |>
+  pivot_wider(names_from = term, values_from = estimate)
+pvals <- map_dfr(regression_lagged, ~ broom::tidy(.x), .id = "year") |> 
+  filter(term != "(Intercept)") |> 
+  select(year, term, p.value) |> 
+  pivot_wider(names_from = term, values_from = p.value, names_prefix = "p.value_")
+
+lagged <- lagged |> 
+  left_join(coefficients, by = "year") |> 
+  left_join(pvals, by = "year") |>
+  mutate(across(where(is.numeric), ~ round(.x, 6))) |> 
+  relocate("p.value_lag_unemployment", .after = "lag_unemployment") |> 
+  relocate("p.value_`expenditure_1994-1999_budget_lag1`", .after = "`expenditure_1994-1999_budget_lag1`") |> 
+  relocate("p.value_`expenditure_2000-2006_budget_lag1`", .after = "`expenditure_2000-2006_budget_lag1`") |>
+  relocate("p.value_`expenditure_2007-2013_budget_lag1`", .after = "`expenditure_2007-2013_budget_lag1`") |>
+  relocate("p.value_`expenditure_2014-2020_budget_lag1`", .after = "`expenditure_2014-2020_budget_lag1`")
+# Lag unemployment always significant
+# expenditure rarely significant, often positive coefficient
+mean(lagged$r_squared)
+sum(lagged$"`expenditure_1994-1999_budget_lag1`" < 0, na.rm = TRUE) + sum(lagged$"`expenditure_2000-2006_budget_lag1`" < 0, na.rm = TRUE) + sum(lagged$"`expenditure_2007-2013_budget_lag1`" < 0, na.rm = TRUE) + sum(lagged$"`expenditure_2014-2020_budget_lag1`" < 0, na.rm = TRUE)
+```
+
+7.1.2
+
+```{r}
+# lag-3
+regression_lagged <- map(list_lagged_cleaned, function(df) {
+  # Find column names that start with "expenditure"
+  exp_vars <- names(df)[startsWith(names(df), "expenditure") & 
+                          endsWith(names(df), "_lag3")]
+
+  # Build the regression formula
+  formula <- as.formula(paste("unemployment ~ lag_unemployment +",
+                              paste0("`", exp_vars, "`", collapse = " + ")))
+
+  # Run regression
+  lm(formula, data = df)
+})
+
+rsquared <- map_dbl(regression_lagged, ~ summary(.x)$r.squared)
+lagged <- tibble(
+  year = names(rsquared),
+  r_squared = as.numeric(rsquared)
+)
+
+coefficients <- map_dfr(regression_lagged, ~ broom::tidy(.x), .id = "year") |> 
+  filter(term != "(Intercept)") |> 
+  select(year, term, estimate) |>
+  pivot_wider(names_from = term, values_from = estimate)
+pvals <- map_dfr(regression_lagged, ~ broom::tidy(.x), .id = "year") |> 
+  filter(term != "(Intercept)") |> 
+  select(year, term, p.value) |> 
+  pivot_wider(names_from = term, values_from = p.value, names_prefix = "p.value_")
+
+lagged <- lagged |> 
+  left_join(coefficients, by = "year") |> 
+  left_join(pvals, by = "year") |>
+  mutate(across(where(is.numeric), ~ round(.x, 6))) |> 
+  relocate("p.value_lag_unemployment", .after = "lag_unemployment") |> 
+  relocate("p.value_`expenditure_1994-1999_budget_lag3`", .after = "`expenditure_1994-1999_budget_lag3`") |> 
+  relocate("p.value_`expenditure_2000-2006_budget_lag3`", .after = "`expenditure_2000-2006_budget_lag3`") |>
+  relocate("p.value_`expenditure_2007-2013_budget_lag3`", .after = "`expenditure_2007-2013_budget_lag3`") |>
+  relocate("p.value_`expenditure_2014-2020_budget_lag3`", .after = "`expenditure_2014-2020_budget_lag3`")
+
+# improves slightly
+mean(lagged$r_squared)
+sum(lagged$"`expenditure_1994-1999_budget_lag3`" < 0, na.rm = TRUE) + sum(lagged$"`expenditure_2000-2006_budget_lag3`" < 0, na.rm = TRUE) + sum(lagged$"`expenditure_2007-2013_budget_lag3`" < 0, na.rm = TRUE) + sum(lagged$"`expenditure_2014-2020_budget_lag3`" < 0, na.rm = TRUE)
+```
+
+7.2 Growth rates
+
+7.2.1
+
+```{r}
+# lag-1
+regression_lagged <- map(list_lagged_gr_cleaned, function(df) {
+  # Find column names that start with "expenditure"
+  exp_vars <- names(df)[startsWith(names(df), "expenditure") & 
+                          endsWith(names(df), "_lag1")]
+
+  # Build the regression formula
+  formula <- as.formula(paste("unemployment ~ lag_unemployment +",
+                              paste0("`", exp_vars, "`", collapse = " + ")))
+
+  # Run regression
+  lm(formula, data = df)
+})
+
+rsquared <- map_dbl(regression_lagged, ~ summary(.x)$r.squared)
+lagged <- tibble(
+  year = names(rsquared),
+  r_squared = as.numeric(rsquared)
+)
+
+coefficients <- map_dfr(regression_lagged, ~ broom::tidy(.x), .id = "year") |> 
+  filter(term != "(Intercept)") |> 
+  select(year, term, estimate) |>
+  pivot_wider(names_from = term, values_from = estimate)
+pvals <- map_dfr(regression_lagged, ~ broom::tidy(.x), .id = "year") |> 
+  filter(term != "(Intercept)") |> 
+  select(year, term, p.value) |> 
+  pivot_wider(names_from = term, values_from = p.value, names_prefix = "p.value_")
+
+lagged <- lagged |> 
+  left_join(coefficients, by = "year") |> 
+  left_join(pvals, by = "year") |>
+  mutate(across(where(is.numeric), ~ round(.x, 6))) |> 
+  relocate("p.value_lag_unemployment", .after = "lag_unemployment") |> 
+  relocate("p.value_`expenditure_1994-1999_budget_lag1`", .after = "`expenditure_1994-1999_budget_lag1`") |> 
+  relocate("p.value_`expenditure_2000-2006_budget_lag1`", .after = "`expenditure_2000-2006_budget_lag1`") |>
+  relocate("p.value_`expenditure_2007-2013_budget_lag1`", .after = "`expenditure_2007-2013_budget_lag1`") |>
+  relocate("p.value_`expenditure_2014-2020_budget_lag1`", .after = "`expenditure_2014-2020_budget_lag1`")
+
+# mostly non-significant, coefficients both way
+mean(lagged$r_squared)
+sum(lagged$"`expenditure_1994-1999_budget_lag1`" < 0, na.rm = TRUE) + sum(lagged$"`expenditure_2000-2006_budget_lag1`" < 0, na.rm = TRUE) + sum(lagged$"`expenditure_2007-2013_budget_lag1`" < 0, na.rm = TRUE) + sum(lagged$"`expenditure_2014-2020_budget_lag1`" < 0, na.rm = TRUE)
+```
+
+7.2.2
+
+```{r}
+# lag-3
+regression_lagged <- map(list_lagged_gr_cleaned, function(df) {
+  # Find column names that start with "expenditure"
+  exp_vars <- names(df)[startsWith(names(df), "expenditure") & 
+                          endsWith(names(df), "_lag3")]
+
+  # Build the regression formula
+  formula <- as.formula(paste("unemployment ~ lag_unemployment +",
+                              paste0("`", exp_vars, "`", collapse = " + ")))
+
+  # Run regression
+  lm(formula, data = df)
+})
+
+rsquared <- map_dbl(regression_lagged, ~ summary(.x)$r.squared)
+lagged <- tibble(
+  year = names(rsquared),
+  r_squared = as.numeric(rsquared)
+)
+
+coefficients <- map_dfr(regression_lagged, ~ broom::tidy(.x), .id = "year") |> 
+  filter(term != "(Intercept)") |> 
+  select(year, term, estimate) |>
+  pivot_wider(names_from = term, values_from = estimate)
+pvals <- map_dfr(regression_lagged, ~ broom::tidy(.x), .id = "year") |> 
+  filter(term != "(Intercept)") |> 
+  select(year, term, p.value) |> 
+  pivot_wider(names_from = term, values_from = p.value, names_prefix = "p.value_")
+
+lagged <- lagged |> 
+  left_join(coefficients, by = "year") |> 
+  left_join(pvals, by = "year") |>
+  mutate(across(where(is.numeric), ~ round(.x, 6))) |> 
+  relocate("p.value_lag_unemployment", .after = "lag_unemployment") |> 
+  relocate("p.value_`expenditure_1994-1999_budget_lag3`", .after = "`expenditure_1994-1999_budget_lag3`") |> 
+  relocate("p.value_`expenditure_2000-2006_budget_lag3`", .after = "`expenditure_2000-2006_budget_lag3`") |>
+  relocate("p.value_`expenditure_2007-2013_budget_lag3`", .after = "`expenditure_2007-2013_budget_lag3`") |>
+  relocate("p.value_`expenditure_2014-2020_budget_lag3`", .after = "`expenditure_2014-2020_budget_lag3`")
+
+# Seems more significance, coefficients still both ways
+mean(lagged$r_squared)
+sum(lagged$"`expenditure_1994-1999_budget_lag3`" < 0, na.rm = TRUE) + sum(lagged$"`expenditure_2000-2006_budget_lag3`" < 0, na.rm = TRUE) + sum(lagged$"`expenditure_2007-2013_budget_lag3`" < 0, na.rm = TRUE) + sum(lagged$"`expenditure_2014-2020_budget_lag3`" < 0, na.rm = TRUE)
+```
+
+## 8) Growth rates over longer period of time
+
+8.1 GDP + expediture
+
+8.1.1
+
+```{r}
+# 3-years period
+regression <- map(list_gr3_cleaned, function(df) {
+  # Find column names that start with "expenditure"
+  exp_vars <- names(df)[startsWith(names(df), "expenditure") & endsWith(names(df), "_lag3")]
+
+  # Build the regression formula
+  formula <- as.formula(paste("unemployment ~ gdp +",
+                              paste0("`", exp_vars, "`", collapse = " + ")))
+
+  # Run regression
+  lm(formula, data = df)
+})
+
+rsquared <- map_dbl(regression, ~ summary(.x)$r.squared)
+regg3 <- tibble(
+  year = names(rsquared),
+  r_squared = as.numeric(rsquared)
+)
+
+coefficients <- map_dfr(regression, ~ broom::tidy(.x), .id = "year") |> 
+  filter(term != "(Intercept)") |> 
+  select(year, term, estimate) |>
+  pivot_wider(names_from = term, values_from = estimate)
+pvals <- map_dfr(regression, ~ broom::tidy(.x), .id = "year") |> 
+  filter(term != "(Intercept)") |> 
+  select(year, term, p.value) |> 
+  pivot_wider(names_from = term, values_from = p.value, names_prefix = "p.value_")
+
+regg3 <- regg3 |> 
+  left_join(coefficients, by = "year") |> 
+  left_join(pvals, by = "year") |>
+  mutate(across(where(is.numeric), ~ round(.x, 6))) |> 
+  relocate("`expenditure_2007-2013_budget_lag3`", .after = "`expenditure_2000-2006_budget_lag3`") |>
+  relocate("`expenditure_2014-2020_budget_lag3`", .after = "`expenditure_2007-2013_budget_lag3`") |>
+  relocate("p.value_`expenditure_1994-1999_budget_lag3`", .after = "`expenditure_1994-1999_budget_lag3`") |> 
+  relocate("p.value_`expenditure_2000-2006_budget_lag3`", .after = "`expenditure_2000-2006_budget_lag3`") |>
+  relocate("p.value_`expenditure_2007-2013_budget_lag3`", .after = "`expenditure_2007-2013_budget_lag3`") |>
+  relocate("p.value_`expenditure_2014-2020_budget_lag3`", .after = "`expenditure_2014-2020_budget_lag3`") |> 
+  relocate("p.value_gdp", .after = "gdp")
+
+# better model, gdp almost always significant and negative, expenditure is sometimes significant, but coefficients still both ways
+mean(regg3$r_squared)
+sum(regg3$"`expenditure_1994-1999_budget_lag3`" < 0, na.rm = TRUE) + sum(regg3$"`expenditure_2000-2006_budget_lag3`" < 0, na.rm = TRUE) + sum(regg3$"`expenditure_2007-2013_budget_lag3`" < 0, na.rm = TRUE) + sum(regg3$"`expenditure_2014-2020_budget_lag3`" < 0, na.rm = TRUE)
+```
+
+8.1.2
+
+```{r}
+# 5 year period
+regression <- map(list_gr5_cleaned, function(df) {
+  # Find column names that start with "expenditure"
+  exp_vars <- names(df)[startsWith(names(df), "expenditure") & endsWith(names(df), "_lag5")]
+
+  # Build the regression formula
+  formula <- as.formula(paste("unemployment ~ gdp +",
+                              paste0("`", exp_vars, "`", collapse = " + ")))
+
+  # Run regression
+  lm(formula, data = df)
+})
+
+rsquared <- map_dbl(regression, ~ summary(.x)$r.squared)
+regg5 <- tibble(
+  year = names(rsquared),
+  r_squared = as.numeric(rsquared)
+)
+
+coefficients <- map_dfr(regression, ~ broom::tidy(.x), .id = "year") |> 
+  filter(term != "(Intercept)") |> 
+  select(year, term, estimate) |>
+  pivot_wider(names_from = term, values_from = estimate)
+pvals <- map_dfr(regression, ~ broom::tidy(.x), .id = "year") |> 
+  filter(term != "(Intercept)") |> 
+  select(year, term, p.value) |> 
+  pivot_wider(names_from = term, values_from = p.value, names_prefix = "p.value_")
+
+regg5 <- regg5 |> 
+  left_join(coefficients, by = "year") |> 
+  left_join(pvals, by = "year") |>
+  mutate(across(where(is.numeric), ~ round(.x, 6))) |> 
+  relocate("`expenditure_2007-2013_budget_lag5`", .after = "`expenditure_2000-2006_budget_lag5`") |>
+  relocate("`expenditure_2014-2020_budget_lag5`", .after = "`expenditure_2007-2013_budget_lag5`") |>
+  relocate("p.value_`expenditure_1994-1999_budget_lag5`", .after = "`expenditure_1994-1999_budget_lag5`") |> 
+  relocate("p.value_`expenditure_2000-2006_budget_lag5`", .after = "`expenditure_2000-2006_budget_lag5`") |>
+  relocate("p.value_`expenditure_2007-2013_budget_lag5`", .after = "`expenditure_2007-2013_budget_lag5`") |>
+  relocate("p.value_`expenditure_2014-2020_budget_lag5`", .after = "`expenditure_2014-2020_budget_lag5`") |> 
+  relocate("p.value_gdp", .after = "gdp")
+
+# gdp always significant and negative
+# expenditure seems more significant, but coefficients still both ways
+# slight improvement in r2
+mean(regg5$r_squared)
+sum(regg5$"`expenditure_1994-1999_budget_lag5`" < 0, na.rm = TRUE) + sum(regg5$"`expenditure_2000-2006_budget_lag5`" < 0, na.rm = TRUE) + sum(regg5$"`expenditure_2007-2013_budget_lag5`" < 0, na.rm = TRUE) + sum(regg5$"`expenditure_2014-2020_budget_lag5`" < 0, na.rm = TRUE)
+```
+
+8.1.3
+
+```{r}
+# 7 year period
+regression <- map(list_gr7_cleaned, function(df) {
+  # Find column names that start with "expenditure"
+  exp_vars <- names(df)[startsWith(names(df), "expenditure") & endsWith(names(df), "_lag7")]
+
+  # Build the regression formula
+  formula <- as.formula(paste("unemployment ~ gdp +",
+                              paste0("`", exp_vars, "`", collapse = " + ")))
+
+  # Run regression
+  lm(formula, data = df)
+})
+
+rsquared <- map_dbl(regression, ~ summary(.x)$r.squared)
+regg7 <- tibble(
+  year = names(rsquared),
+  r_squared = as.numeric(rsquared)
+)
+
+coefficients <- map_dfr(regression, ~ broom::tidy(.x), .id = "year") |> 
+  filter(term != "(Intercept)") |> 
+  select(year, term, estimate) |>
+  pivot_wider(names_from = term, values_from = estimate)
+pvals <- map_dfr(regression, ~ broom::tidy(.x), .id = "year") |> 
+  filter(term != "(Intercept)") |> 
+  select(year, term, p.value) |> 
+  pivot_wider(names_from = term, values_from = p.value, names_prefix = "p.value_")
+
+regg7 <- regg7 |> 
+  left_join(coefficients, by = "year") |> 
+  left_join(pvals, by = "year") |>
+  mutate(across(where(is.numeric), ~ round(.x, 6))) |> 
+  relocate("`expenditure_2007-2013_budget_lag7`", .after = "`expenditure_2000-2006_budget_lag7`") |>
+  relocate("`expenditure_2014-2020_budget_lag7`", .after = "`expenditure_2007-2013_budget_lag7`") |>
+  relocate("p.value_`expenditure_1994-1999_budget_lag7`", .after = "`expenditure_1994-1999_budget_lag7`") |> 
+  relocate("p.value_`expenditure_2000-2006_budget_lag7`", .after = "`expenditure_2000-2006_budget_lag7`") |>
+  relocate("p.value_`expenditure_2007-2013_budget_lag7`", .after = "`expenditure_2007-2013_budget_lag7`") |>
+  relocate("p.value_`expenditure_2014-2020_budget_lag7`", .after = "`expenditure_2014-2020_budget_lag7`") |> 
+  relocate("p.value_gdp", .after = "gdp")
+
+# improves even more the r2, gdp almost always significant and always negative
+# expenditure seems more significant, but coefficients still both ways
+mean(regg7$r_squared)
+sum(regg7$"`expenditure_1994-1999_budget_lag7`" < 0, na.rm = TRUE) + sum(regg7$"`expenditure_2000-2006_budget_lag7`" < 0, na.rm = TRUE) + sum(regg7$"`expenditure_2007-2013_budget_lag7`" < 0, na.rm = TRUE) + sum(regg7$"`expenditure_2014-2020_budget_lag7`" < 0, na.rm = TRUE)
+```
+
+8.2 Adding poor binaries
+
+8.2.1
+
+```{r}
+# 3-years period
+regression <- map(list_gr3_cleaned, function(df) {
+  exp_vars <- names(df)[startsWith(names(df), "expenditure") & endsWith(names(df), "_lag3")]
+  poor_vars <- names(df)[startsWith(names(df), "poor")]
+
+  # Backtick only the expenditure vars
+  exp_vars_bt <- paste0("`", exp_vars, "`")
+
+  # Combine both
+  all_vars <- c(exp_vars_bt, poor_vars)
+
+  formula <- as.formula(paste(
+    "unemployment ~ gdp +",
+    paste(all_vars, collapse = " + ")
+  ))
+
+  lm(formula, data = df)
+})
+
+rsquared <- map_dbl(regression, ~ summary(.x)$r.squared)
+regg3 <- tibble(
+  year = names(rsquared),
+  r_squared = as.numeric(rsquared)
+)
+
+coefficients <- map_dfr(regression, ~ broom::tidy(.x), .id = "year") |> 
+  filter(term != "(Intercept)") |> 
+  select(year, term, estimate) |>
+  pivot_wider(names_from = term, values_from = estimate)
+pvals <- map_dfr(regression, ~ broom::tidy(.x), .id = "year") |> 
+  filter(term != "(Intercept)") |> 
+  select(year, term, p.value) |> 
+  pivot_wider(names_from = term, values_from = p.value, names_prefix = "p.value_")
+
+regg3 <- regg3 |> 
+  left_join(coefficients, by = "year") |> 
+  left_join(pvals, by = "year") |>
+  mutate(across(where(is.numeric), ~ round(.x, 6))) |> 
+  relocate("`expenditure_2007-2013_budget_lag3`", .after = "`expenditure_2000-2006_budget_lag3`") |>
+  relocate("`expenditure_2014-2020_budget_lag3`", .after = "`expenditure_2007-2013_budget_lag3`") |>
+  relocate("p.value_`expenditure_1994-1999_budget_lag3`", .after = "`expenditure_1994-1999_budget_lag3`") |> 
+  relocate("p.value_`expenditure_2000-2006_budget_lag3`", .after = "`expenditure_2000-2006_budget_lag3`") |>
+  relocate("p.value_`expenditure_2007-2013_budget_lag3`", .after = "`expenditure_2007-2013_budget_lag3`") |>
+  relocate("p.value_`expenditure_2014-2020_budget_lag3`", .after = "`expenditure_2014-2020_budget_lag3`") |> 
+  relocate("p.value_gdp", .after = "gdp") |> 
+  relocate("p.value_poor00_06", .after = "poor00_06") |>
+  relocate("p.value_poor07_13", .after = "poor07_13") |>
+  relocate("p.value_poor14_20", .after = "poor14_20")
+
+# poor binaries do not change much
+mean(regg3$r_squared)
+sum(regg3$"`expenditure_1994-1999_budget_lag3`" < 0, na.rm = TRUE) + sum(regg3$"`expenditure_2000-2006_budget_lag3`" < 0, na.rm = TRUE) + sum(regg3$"`expenditure_2007-2013_budget_lag3`" < 0, na.rm = TRUE) + sum(regg3$"`expenditure_2014-2020_budget_lag3`" < 0, na.rm = TRUE)
+```
+
+8.2.2
+
+```{r}
+# 5 year period
+regression <- map(list_gr5_cleaned, function(df) {
+  exp_vars <- names(df)[startsWith(names(df), "expenditure") & endsWith(names(df), "_lag5")]
+  poor_vars <- names(df)[startsWith(names(df), "poor")]
+
+  # Backtick only the expenditure vars
+  exp_vars_bt <- paste0("`", exp_vars, "`")
+
+  # Combine both
+  all_vars <- c(exp_vars_bt, poor_vars)
+
+  formula <- as.formula(paste(
+    "unemployment ~ gdp +",
+    paste(all_vars, collapse = " + ")
+  ))
+
+  lm(formula, data = df)
+})
+
+rsquared <- map_dbl(regression, ~ summary(.x)$r.squared)
+regg5 <- tibble(
+  year = names(rsquared),
+  r_squared = as.numeric(rsquared)
+)
+
+coefficients <- map_dfr(regression, ~ broom::tidy(.x), .id = "year") |> 
+  filter(term != "(Intercept)") |> 
+  select(year, term, estimate) |>
+  pivot_wider(names_from = term, values_from = estimate)
+pvals <- map_dfr(regression, ~ broom::tidy(.x), .id = "year") |> 
+  filter(term != "(Intercept)") |> 
+  select(year, term, p.value) |> 
+  pivot_wider(names_from = term, values_from = p.value, names_prefix = "p.value_")
+
+regg5 <- regg5 |> 
+  left_join(coefficients, by = "year") |> 
+  left_join(pvals, by = "year") |>
+  mutate(across(where(is.numeric), ~ round(.x, 6))) |> 
+  relocate("`expenditure_2007-2013_budget_lag5`", .after = "`expenditure_2000-2006_budget_lag5`") |>
+  relocate("`expenditure_2014-2020_budget_lag5`", .after = "`expenditure_2007-2013_budget_lag5`") |>
+  relocate("p.value_`expenditure_1994-1999_budget_lag5`", .after = "`expenditure_1994-1999_budget_lag5`") |> 
+  relocate("p.value_`expenditure_2000-2006_budget_lag5`", .after = "`expenditure_2000-2006_budget_lag5`") |>
+  relocate("p.value_`expenditure_2007-2013_budget_lag5`", .after = "`expenditure_2007-2013_budget_lag5`") |>
+  relocate("p.value_`expenditure_2014-2020_budget_lag5`", .after = "`expenditure_2014-2020_budget_lag5`") |> 
+  relocate("p.value_gdp", .after = "gdp") |> 
+  relocate("p.value_poor00_06", .after = "poor00_06") |>
+  relocate("p.value_poor07_13", .after = "poor07_13") |>
+  relocate("p.value_poor14_20", .after = "poor14_20")
+
+mean(regg5$r_squared)
+sum(regg5$"`expenditure_1994-1999_budget_lag5`" < 0, na.rm = TRUE) + sum(regg5$"`expenditure_2000-2006_budget_lag5`" < 0, na.rm = TRUE) + sum(regg5$"`expenditure_2007-2013_budget_lag5`" < 0, na.rm = TRUE) + sum(regg5$"`expenditure_2014-2020_budget_lag5`" < 0, na.rm = TRUE)
+```
+
+8.2.3
+
+```{r}
+# 7 year period
+regression <- map(list_gr7_cleaned, function(df) {
+  exp_vars <- names(df)[startsWith(names(df), "expenditure") & endsWith(names(df), "_lag7")]
+  poor_vars <- names(df)[startsWith(names(df), "poor")]
+
+  # Backtick only the expenditure vars
+  exp_vars_bt <- paste0("`", exp_vars, "`")
+
+  # Combine both
+  all_vars <- c(exp_vars_bt, poor_vars)
+
+  formula <- as.formula(paste(
+    "unemployment ~ gdp +",
+    paste(all_vars, collapse = " + ")
+  ))
+
+  lm(formula, data = df)
+})
+
+rsquared <- map_dbl(regression, ~ summary(.x)$r.squared)
+regg7 <- tibble(
+  year = names(rsquared),
+  r_squared = as.numeric(rsquared)
+)
+
+coefficients <- map_dfr(regression, ~ broom::tidy(.x), .id = "year") |> 
+  filter(term != "(Intercept)") |> 
+  select(year, term, estimate) |>
+  pivot_wider(names_from = term, values_from = estimate)
+pvals <- map_dfr(regression, ~ broom::tidy(.x), .id = "year") |> 
+  filter(term != "(Intercept)") |> 
+  select(year, term, p.value) |> 
+  pivot_wider(names_from = term, values_from = p.value, names_prefix = "p.value_")
+
+regg7 <- regg7 |> 
+  left_join(coefficients, by = "year") |> 
+  left_join(pvals, by = "year") |>
+  mutate(across(where(is.numeric), ~ round(.x, 6))) |> 
+  relocate("`expenditure_2007-2013_budget_lag7`", .after = "`expenditure_2000-2006_budget_lag7`") |>
+  relocate("`expenditure_2014-2020_budget_lag7`", .after = "`expenditure_2007-2013_budget_lag7`") |>
+  relocate("p.value_`expenditure_1994-1999_budget_lag7`", .after = "`expenditure_1994-1999_budget_lag7`") |> 
+  relocate("p.value_`expenditure_2000-2006_budget_lag7`", .after = "`expenditure_2000-2006_budget_lag7`") |>
+  relocate("p.value_`expenditure_2007-2013_budget_lag7`", .after = "`expenditure_2007-2013_budget_lag7`") |>
+  relocate("p.value_`expenditure_2014-2020_budget_lag7`", .after = "`expenditure_2014-2020_budget_lag7`") |> 
+  relocate("p.value_gdp", .after = "gdp") |> 
+  relocate("p.value_poor00_06", .after = "poor00_06") |>
+  relocate("p.value_poor07_13", .after = "poor07_13") |>
+  relocate("p.value_poor14_20", .after = "poor14_20")
+
+mean(regg7$r_squared)
+sum(regg7$"`expenditure_1994-1999_budget_lag7`" < 0, na.rm = TRUE) + sum(regg7$"`expenditure_2000-2006_budget_lag7`" < 0, na.rm = TRUE) + sum(regg7$"`expenditure_2007-2013_budget_lag7`" < 0, na.rm = TRUE) + sum(regg7$"`expenditure_2014-2020_budget_lag7`" < 0, na.rm = TRUE)
+# poor binaries do not change much they are usually not significant and with both positive and negative coefficients
+```
+
+## 9) Averages over long period of time
+
+9.1 GDP + expediture
+
+9.1.1
+
+```{r}
+# 3-years period
+regression <- map(list_avg3_cleaned, function(df) {
+  # Find column names that start with "expenditure"
+  exp_vars <- names(df)[startsWith(names(df), "expenditure") & endsWith(names(df), "_avg3")]
+
+  # Build the regression formula
+  formula <- as.formula(paste("unemployment ~ gdp +",
+                              paste0("`", exp_vars, "`", collapse = " + ")))
+
+  # Run regression
+  lm(formula, data = df)
+})
+
+rsquared <- map_dbl(regression, ~ summary(.x)$r.squared)
+avg3 <- tibble(
+  year = names(rsquared),
+  r_squared = as.numeric(rsquared)
+)
+
+coefficients <- map_dfr(regression, ~ broom::tidy(.x), .id = "year") |> 
+  filter(term != "(Intercept)") |> 
+  select(year, term, estimate) |>
+  pivot_wider(names_from = term, values_from = estimate)
+pvals <- map_dfr(regression, ~ broom::tidy(.x), .id = "year") |> 
+  filter(term != "(Intercept)") |> 
+  select(year, term, p.value) |> 
+  pivot_wider(names_from = term, values_from = p.value, names_prefix = "p.value_")
+
+avg3 <- avg3 |> 
+  left_join(coefficients, by = "year") |> 
+  left_join(pvals, by = "year") |>
+  mutate(across(where(is.numeric), ~ round(.x, 6))) |> 
+  relocate("`expenditure_2007-2013_budget_avg3`", .after = "`expenditure_2000-2006_budget_avg3`") |>
+  relocate("`expenditure_2014-2020_budget_avg3`", .after = "`expenditure_2007-2013_budget_avg3`") |>
+  relocate("p.value_`expenditure_1994-1999_budget_avg3`", .after = "`expenditure_1994-1999_budget_avg3`") |> 
+  relocate("p.value_`expenditure_2000-2006_budget_avg3`", .after = "`expenditure_2000-2006_budget_avg3`") |>
+  relocate("p.value_`expenditure_2007-2013_budget_avg3`", .after = "`expenditure_2007-2013_budget_avg3`") |>
+  relocate("p.value_`expenditure_2014-2020_budget_avg3`", .after = "`expenditure_2014-2020_budget_avg3`") |> 
+  relocate("p.value_gdp", .after = "gdp")
+
+# gdp almost always significant and negative
+# expenditure often significant but positive
+mean(avg3$r_squared)
+sum(avg3$"`expenditure_1994-1999_budget_avg3`" < 0, na.rm = TRUE) + sum(avg3$"`expenditure_2000-2006_budget_avg3`" < 0, na.rm = TRUE) + sum(avg3$"`expenditure_2007-2013_budget_avg3`" < 0, na.rm = TRUE) + sum(avg3$"`expenditure_2014-2020_budget_avg3`" < 0, na.rm = TRUE)
+```
+
+9.1.2
+
+```{r}
+# 5-years period
+regression <- map(list_avg5_cleaned, function(df) {
+  # Find column names that start with "expenditure"
+  exp_vars <- names(df)[startsWith(names(df), "expenditure") & endsWith(names(df), "_avg5")]
+
+  # Build the regression formula
+  formula <- as.formula(paste("unemployment ~ gdp +",
+                              paste0("`", exp_vars, "`", collapse = " + ")))
+
+  # Run regression
+  lm(formula, data = df)
+})
+
+rsquared <- map_dbl(regression, ~ summary(.x)$r.squared)
+avg5 <- tibble(
+  year = names(rsquared),
+  r_squared = as.numeric(rsquared)
+)
+
+coefficients <- map_dfr(regression, ~ broom::tidy(.x), .id = "year") |> 
+  filter(term != "(Intercept)") |> 
+  select(year, term, estimate) |>
+  pivot_wider(names_from = term, values_from = estimate)
+pvals <- map_dfr(regression, ~ broom::tidy(.x), .id = "year") |> 
+  filter(term != "(Intercept)") |> 
+  select(year, term, p.value) |> 
+  pivot_wider(names_from = term, values_from = p.value, names_prefix = "p.value_")
+
+avg5 <- avg5 |> 
+  left_join(coefficients, by = "year") |> 
+  left_join(pvals, by = "year") |>
+  mutate(across(where(is.numeric), ~ round(.x, 6))) |> 
+  relocate("`expenditure_2007-2013_budget_avg5`", .after = "`expenditure_2000-2006_budget_avg5`") |>
+  relocate("`expenditure_2014-2020_budget_avg5`", .after = "`expenditure_2007-2013_budget_avg5`") |>
+  relocate("p.value_`expenditure_1994-1999_budget_avg5`", .after = "`expenditure_1994-1999_budget_avg5`") |> 
+  relocate("p.value_`expenditure_2000-2006_budget_avg5`", .after = "`expenditure_2000-2006_budget_avg5`") |>
+  relocate("p.value_`expenditure_2007-2013_budget_avg5`", .after = "`expenditure_2007-2013_budget_avg5`") |>
+  relocate("p.value_`expenditure_2014-2020_budget_avg5`", .after = "`expenditure_2014-2020_budget_avg5`") |> 
+  relocate("p.value_gdp", .after = "gdp")
+
+# gdp always significant and negative
+# improvement in rsquared
+# expenditure often significant but primarly positive
+mean(avg5$r_squared)
+sum(avg5$"`expenditure_1994-1999_budget_avg5`" < 0, na.rm = TRUE) + sum(avg5$"`expenditure_2000-2006_budget_avg5`" < 0, na.rm = TRUE) + sum(avg5$"`expenditure_2007-2013_budget_avg5`" < 0, na.rm = TRUE) + sum(avg5$"`expenditure_2014-2020_budget_avg5`" < 0, na.rm = TRUE)
+```
+
+9.1.3
+
+```{r}
+# 7-years period
+regression <- map(list_avg7_cleaned, function(df) {
+  # Find column names that start with "expenditure"
+  exp_vars <- names(df)[startsWith(names(df), "expenditure") & endsWith(names(df), "_avg7")]
+
+  # Build the regression formula
+  formula <- as.formula(paste("unemployment ~ gdp +",
+                              paste0("`", exp_vars, "`", collapse = " + ")))
+
+  # Run regression
+  lm(formula, data = df)
+})
+
+rsquared <- map_dbl(regression, ~ summary(.x)$r.squared)
+avg7 <- tibble(
+  year = names(rsquared),
+  r_squared = as.numeric(rsquared)
+)
+
+coefficients <- map_dfr(regression, ~ broom::tidy(.x), .id = "year") |> 
+  filter(term != "(Intercept)") |> 
+  select(year, term, estimate) |>
+  pivot_wider(names_from = term, values_from = estimate)
+pvals <- map_dfr(regression, ~ broom::tidy(.x), .id = "year") |> 
+  filter(term != "(Intercept)") |> 
+  select(year, term, p.value) |> 
+  pivot_wider(names_from = term, values_from = p.value, names_prefix = "p.value_")
+
+avg7 <- avg7 |> 
+  left_join(coefficients, by = "year") |> 
+  left_join(pvals, by = "year") |>
+  mutate(across(where(is.numeric), ~ round(.x, 6))) |> 
+  relocate("`expenditure_2007-2013_budget_avg7`", .after = "`expenditure_2000-2006_budget_avg7`") |>
+  relocate("`expenditure_2014-2020_budget_avg7`", .after = "`expenditure_2007-2013_budget_avg7`") |>
+  relocate("p.value_`expenditure_1994-1999_budget_avg7`", .after = "`expenditure_1994-1999_budget_avg7`") |> 
+  relocate("p.value_`expenditure_2000-2006_budget_avg7`", .after = "`expenditure_2000-2006_budget_avg7`") |>
+  relocate("p.value_`expenditure_2007-2013_budget_avg7`", .after = "`expenditure_2007-2013_budget_avg7`") |>
+  relocate("p.value_`expenditure_2014-2020_budget_avg7`", .after = "`expenditure_2014-2020_budget_avg7`") |> 
+  relocate("p.value_gdp", .after = "gdp")
+
+# gdp always significant and negative
+# expenditure primarly positive
+mean(avg7$r_squared)
+sum(avg7$"`expenditure_1994-1999_budget_avg7`" < 0, na.rm = TRUE) + sum(avg7$"`expenditure_2000-2006_budget_avg7`" < 0, na.rm = TRUE) + sum(avg7$"`expenditure_2007-2013_budget_avg7`" < 0, na.rm = TRUE) + sum(avg7$"`expenditure_2014-2020_budget_avg7`" < 0, na.rm = TRUE)
+```
+
+9.2 Adding poor binaries
+
+9.2.1
+
+```{r}
+# 3-years period
+regression <- map(list_avg3_cleaned, function(df) {
+  exp_vars <- names(df)[startsWith(names(df), "expenditure") & endsWith(names(df), "_avg3")]
+  poor_vars <- names(df)[startsWith(names(df), "poor")]
+
+  # Backtick only the expenditure vars
+  exp_vars_bt <- paste0("`", exp_vars, "`")
+
+  # Combine both
+  all_vars <- c(exp_vars_bt, poor_vars)
+
+  formula <- as.formula(paste(
+    "unemployment ~ gdp +",
+    paste(all_vars, collapse = " + ")
+  ))
+
+  lm(formula, data = df)
+})
+
+rsquared <- map_dbl(regression, ~ summary(.x)$r.squared)
+avg3 <- tibble(
+  year = names(rsquared),
+  r_squared = as.numeric(rsquared)
+)
+
+coefficients <- map_dfr(regression, ~ broom::tidy(.x), .id = "year") |> 
+  filter(term != "(Intercept)") |> 
+  select(year, term, estimate) |>
+  pivot_wider(names_from = term, values_from = estimate)
+pvals <- map_dfr(regression, ~ broom::tidy(.x), .id = "year") |> 
+  filter(term != "(Intercept)") |> 
+  select(year, term, p.value) |> 
+  pivot_wider(names_from = term, values_from = p.value, names_prefix = "p.value_")
+
+avg3 <- avg3 |> 
+  left_join(coefficients, by = "year") |> 
+  left_join(pvals, by = "year") |>
+  mutate(across(where(is.numeric), ~ round(.x, 6))) |> 
+  relocate("`expenditure_2007-2013_budget_avg3`", .after = "`expenditure_2000-2006_budget_avg3`") |>
+  relocate("`expenditure_2014-2020_budget_avg3`", .after = "`expenditure_2007-2013_budget_avg3`") |>
+  relocate("p.value_`expenditure_1994-1999_budget_avg3`", .after = "`expenditure_1994-1999_budget_avg3`") |> 
+  relocate("p.value_`expenditure_2000-2006_budget_avg3`", .after = "`expenditure_2000-2006_budget_avg3`") |>
+  relocate("p.value_`expenditure_2007-2013_budget_avg3`", .after = "`expenditure_2007-2013_budget_avg3`") |>
+  relocate("p.value_`expenditure_2014-2020_budget_avg3`", .after = "`expenditure_2014-2020_budget_avg3`") |> 
+  relocate("p.value_gdp", .after = "gdp") |> 
+  relocate("p.value_poor00_06", .after = "poor00_06") |>
+  relocate("p.value_poor07_13", .after = "poor07_13") |>
+  relocate("p.value_poor14_20", .after = "poor14_20")
+
+# gdp less significant (stilll mostly significant), always negative 
+# expenditure very often significant primarly positive
+# poor dummies almost always significant, initally positive then negative
+mean(avg3$r_squared)
+sum(avg3$"`expenditure_1994-1999_budget_avg3`" < 0, na.rm = TRUE) + sum(avg3$"`expenditure_2000-2006_budget_avg3`" < 0, na.rm = TRUE) + sum(avg3$"`expenditure_2007-2013_budget_avg3`" < 0, na.rm = TRUE) + sum(avg3$"`expenditure_2014-2020_budget_avg3`" < 0, na.rm = TRUE)
+```
+
+9.2.2
+
+```{r}
+# 5-years period
+regression <- map(list_avg5_cleaned, function(df) {
+  exp_vars <- names(df)[startsWith(names(df), "expenditure") & endsWith(names(df), "_avg5")]
+  poor_vars <- names(df)[startsWith(names(df), "poor")]
+
+  # Backtick only the expenditure vars
+  exp_vars_bt <- paste0("`", exp_vars, "`")
+
+  # Combine both
+  all_vars <- c(exp_vars_bt, poor_vars)
+
+  formula <- as.formula(paste(
+    "unemployment ~ gdp +",
+    paste(all_vars, collapse = " + ")
+  ))
+
+  lm(formula, data = df)
+})
+
+rsquared <- map_dbl(regression, ~ summary(.x)$r.squared)
+avg5 <- tibble(
+  year = names(rsquared),
+  r_squared = as.numeric(rsquared)
+)
+
+coefficients <- map_dfr(regression, ~ broom::tidy(.x), .id = "year") |> 
+  filter(term != "(Intercept)") |> 
+  select(year, term, estimate) |>
+  pivot_wider(names_from = term, values_from = estimate)
+pvals <- map_dfr(regression, ~ broom::tidy(.x), .id = "year") |> 
+  filter(term != "(Intercept)") |> 
+  select(year, term, p.value) |> 
+  pivot_wider(names_from = term, values_from = p.value, names_prefix = "p.value_")
+
+avg5 <- avg5 |> 
+  left_join(coefficients, by = "year") |> 
+  left_join(pvals, by = "year") |>
+  mutate(across(where(is.numeric), ~ round(.x, 6))) |> 
+  relocate("`expenditure_2007-2013_budget_avg5`", .after = "`expenditure_2000-2006_budget_avg5`") |>
+  relocate("`expenditure_2014-2020_budget_avg5`", .after = "`expenditure_2007-2013_budget_avg5`") |>
+  relocate("p.value_`expenditure_1994-1999_budget_avg5`", .after = "`expenditure_1994-1999_budget_avg5`") |> 
+  relocate("p.value_`expenditure_2000-2006_budget_avg5`", .after = "`expenditure_2000-2006_budget_avg5`") |>
+  relocate("p.value_`expenditure_2007-2013_budget_avg5`", .after = "`expenditure_2007-2013_budget_avg5`") |>
+  relocate("p.value_`expenditure_2014-2020_budget_avg5`", .after = "`expenditure_2014-2020_budget_avg5`") |> 
+  relocate("p.value_gdp", .after = "gdp") |> 
+  relocate("p.value_poor00_06", .after = "poor00_06") |>
+  relocate("p.value_poor07_13", .after = "poor07_13") |>
+  relocate("p.value_poor14_20", .after = "poor14_20")
+
+# gdp always negative, mostly significant (not significant in early 2000s)
+# expenditure often significant but primarly positive
+# poor dummies almost always significant, initally positive then negative
+mean(avg5$r_squared)
+sum(avg5$"`expenditure_1994-1999_budget_avg5`" < 0, na.rm = TRUE) + sum(avg5$"`expenditure_2000-2006_budget_avg5`" < 0, na.rm = TRUE) + sum(avg5$"`expenditure_2007-2013_budget_avg5`" < 0, na.rm = TRUE) + sum(avg5$"`expenditure_2014-2020_budget_avg5`" < 0, na.rm = TRUE)
+```
+
+9.2.3
+
+```{r}
+# 7-years period
+regression <- map(list_avg7_cleaned, function(df) {
+  exp_vars <- names(df)[startsWith(names(df), "expenditure") & endsWith(names(df), "_avg7")]
+  poor_vars <- names(df)[startsWith(names(df), "poor")]
+
+  # Backtick only the expenditure vars
+  exp_vars_bt <- paste0("`", exp_vars, "`")
+
+  # Combine both
+  all_vars <- c(exp_vars_bt, poor_vars)
+
+  formula <- as.formula(paste(
+    "unemployment ~ gdp +",
+    paste(all_vars, collapse = " + ")
+  ))
+
+  lm(formula, data = df)
+})
+
+rsquared <- map_dbl(regression, ~ summary(.x)$r.squared)
+avg7 <- tibble(
+  year = names(rsquared),
+  r_squared = as.numeric(rsquared)
+)
+
+coefficients <- map_dfr(regression, ~ broom::tidy(.x), .id = "year") |> 
+  filter(term != "(Intercept)") |> 
+  select(year, term, estimate) |>
+  pivot_wider(names_from = term, values_from = estimate)
+pvals <- map_dfr(regression, ~ broom::tidy(.x), .id = "year") |> 
+  filter(term != "(Intercept)") |> 
+  select(year, term, p.value) |> 
+  pivot_wider(names_from = term, values_from = p.value, names_prefix = "p.value_")
+
+avg7 <- avg7 |> 
+  left_join(coefficients, by = "year") |> 
+  left_join(pvals, by = "year") |>
+  mutate(across(where(is.numeric), ~ round(.x, 6))) |> 
+  relocate("`expenditure_2007-2013_budget_avg7`", .after = "`expenditure_2000-2006_budget_avg7`") |>
+  relocate("`expenditure_2014-2020_budget_avg7`", .after = "`expenditure_2007-2013_budget_avg7`") |>
+  relocate("p.value_`expenditure_1994-1999_budget_avg7`", .after = "`expenditure_1994-1999_budget_avg7`") |> 
+  relocate("p.value_`expenditure_2000-2006_budget_avg7`", .after = "`expenditure_2000-2006_budget_avg7`") |>
+  relocate("p.value_`expenditure_2007-2013_budget_avg7`", .after = "`expenditure_2007-2013_budget_avg7`") |>
+  relocate("p.value_`expenditure_2014-2020_budget_avg7`", .after = "`expenditure_2014-2020_budget_avg7`") |> 
+  relocate("p.value_gdp", .after = "gdp") |> 
+  relocate("p.value_poor00_06", .after = "poor00_06") |>
+  relocate("p.value_poor07_13", .after = "poor07_13") |>
+  relocate("p.value_poor14_20", .after = "poor14_20")
+
+# gdp always significant and negative
+# expenditure often significant but almost always positive
+# poor dummies almost always significant, initally positive then negative
+mean(avg7$r_squared)
+sum(avg7$"`expenditure_1994-1999_budget_avg7`" < 0, na.rm = TRUE) + sum(avg7$"`expenditure_2000-2006_budget_avg7`" < 0, na.rm = TRUE) + sum(avg7$"`expenditure_2007-2013_budget_avg7`" < 0, na.rm = TRUE) + sum(avg7$"`expenditure_2014-2020_budget_avg7`" < 0, na.rm = TRUE)
+```
+
+## 10) 
+
+```{r}
+ab_gdp <- map(list_data_cleaned, ~ .x |>
+                select(starts_with("expenditure"), unemployment, 
+                       starts_with("poor"), gdp))
+
+regression <- map(ab_gdp, ~ lm(gdp ~ ., data = .x))
+
+rsquared <- map_dbl(regression, ~ summary(.x)$r.squared)
+res <- tibble(
+  year = names(rsquared),
+  r_squared = as.numeric(rsquared)
+)
+
+coefficients <- map_dfr(regression, ~ broom::tidy(.x), .id = "year") |> 
+  filter(term != "(Intercept)") |> 
+  select(year, term, estimate) |>
+  pivot_wider(names_from = term, values_from = estimate)
+pvals <- map_dfr(regression, ~ broom::tidy(.x), .id = "year") |> 
+  filter(term != "(Intercept)") |> 
+  select(year, term, p.value) |> 
+  pivot_wider(names_from = term, values_from = p.value, names_prefix = "p.value_")
+
+res <- res |> 
+  left_join(coefficients, by = "year") |> 
+  left_join(pvals, by = "year") |>
+  mutate(across(where(is.numeric), ~ round(.x, 6))) |> 
+  relocate("`expenditure_2007-2013_budget`", .after = "`expenditure_2000-2006_budget`") |>
+  relocate("`expenditure_2014-2020_budget`", .after = "`expenditure_2007-2013_budget`") |>
+  relocate("p.value_unemployment", .after = "unemployment") |>
+  relocate("p.value_`expenditure_1994-1999_budget`", .after = "`expenditure_1994-1999_budget`") |> 
+  relocate("p.value_`expenditure_2000-2006_budget`", .after = "`expenditure_2000-2006_budget`") |>
+  relocate("p.value_`expenditure_2007-2013_budget`", .after = "`expenditure_2007-2013_budget`") |>
+  relocate("p.value_`expenditure_2014-2020_budget`", .after = "`expenditure_2014-2020_budget`") |> 
+  relocate("p.value_poor00_06", .after = "poor00_06") |>
+  relocate("p.value_poor07_13", .after = "poor07_13") |>
+  relocate("p.value_poor14_20", .after = "poor14_20")
+```
+
+```{r}
+gr_gdp <- map(list_gr_gdp, ~ .x |>
+                select(starts_with("expenditure"), unemployment, 
+                        gdp))
+
+regression <- map(gr_gdp, ~ lm(gdp ~ ., data = .x))
+
+rsquared <- map_dbl(regression, ~ summary(.x)$r.squared)
+res <- tibble(
+  year = names(rsquared),
+  r_squared = as.numeric(rsquared)
+)
+
+coefficients <- map_dfr(regression, ~ broom::tidy(.x), .id = "year") |> 
+  filter(term != "(Intercept)") |> 
+  select(year, term, estimate) |>
+  pivot_wider(names_from = term, values_from = estimate)
+pvals <- map_dfr(regression, ~ broom::tidy(.x), .id = "year") |> 
+  filter(term != "(Intercept)") |> 
+  select(year, term, p.value) |> 
+  pivot_wider(names_from = term, values_from = p.value, names_prefix = "p.value_")
+
+res <- res |> 
+  left_join(coefficients, by = "year") |> 
+  left_join(pvals, by = "year") |>
+  mutate(across(where(is.numeric), ~ round(.x, 6))) |> 
+  relocate("`expenditure_2007-2013_budget`", .after = "`expenditure_2000-2006_budget`") |>
+  relocate("`expenditure_2014-2020_budget`", .after = "`expenditure_2007-2013_budget`") |>
+  relocate("p.value_unemployment", .after = "unemployment") |>
+  relocate("p.value_`expenditure_1994-1999_budget`", .after = "`expenditure_1994-1999_budget`") |> 
+  relocate("p.value_`expenditure_2000-2006_budget`", .after = "`expenditure_2000-2006_budget`") |>
+  relocate("p.value_`expenditure_2007-2013_budget`", .after = "`expenditure_2007-2013_budget`") |>
+  relocate("p.value_`expenditure_2014-2020_budget`", .after = "`expenditure_2014-2020_budget`") 
+  # relocate("p.value_poor00_06", .after = "poor00_06") |>
+  # relocate("p.value_poor07_13", .after = "poor07_13") |>
+  # relocate("p.value_poor14_20", .after = "poor14_20")
+```
 
 
-
-Look for the years that are significant (high R2) and try to understand why R2 is high in those years (look at p-values of coefficients)
-
-In general look at the p-values of the expenditure and understand when and maybe why they are significant rather than not
-
-Using absolute value of unemployment and the lag-1 version of it, plus lagged independent?
-
-Looking at poverty rates instead?
-
-
-
-
-If you have a good model include one by one threshold info and expenditure
 
 
 
 
 Look at papers to see how they model unemployment
 
-1- logarithmic growth rate over 2 "long" periods of times
-      a. 2000-2010 (7 year budget period + 2 years of additional expense + 2 years time lag to allow for the short-run effects of the policy to emerge)
-      b. 2010–14 medium run period
-2- average annual growth rate per programming period
+1-  y = average growth rate over funding periods.
+    x = poor binary
+    model = fuzzy regression discontinuity
+2-  y = logarithmic growth rate of employees in the manufacturing sector over 2 "long" periods of times (2000-2010 and 2010–14)
+    x = poor binary
+    model = spatial regression discontinuity
+3-  y = total employment variation between 1991 and 2001
+    x = controls on socioeconomic conditions of regions
+    model = spatial regression discontinuity
 
 
 
 
-
-
-
-
-Potentially interesting variables
+Potential new variables
 
   - GVA instead of GDP
   - Compensation of Employees at constant prices
