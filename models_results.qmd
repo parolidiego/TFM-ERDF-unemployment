@@ -62,6 +62,16 @@ Comments:
 -   Investment most of the times is significant and when significant is negative
 -   Education is positive, sometimes non-significant
 
+<div style="
+  width: calc(100vw - 2rem);
+  margin-left: calc(-50vw + 50% + 1rem);
+  overflow-x: auto;
+">
+```{r, results='asis', echo=FALSE}
+cat(readLines("ab_int.md"), sep = "\n")
+```
+</div>
+
 ### 1.2 Growth rates
 
 Everything in yearly growth rates, but expenditure in absolute terms.
@@ -82,7 +92,7 @@ cat(readLines("gr.md"), sep = "\n")
 
 Mean R-squared: 0.13
 
-N. negative coefficients expenditure: 16/31 = `r round(16/31 * 100, 1)`%
+N. negative coefficients expenditure: 15/31 = `r round(15/31 * 100, 1)`%
 
 N. significant coefficients expenditure: 6/31 = `r round(6/31 * 100, 1)`%
 
@@ -93,6 +103,16 @@ Comments:
 -   GDP almost always negative and significant
 -   Investment not often significant, but when significant negative
 -   Education rarely significant and coefficients both ways
+
+<div style="
+  width: calc(100vw - 2rem);
+  margin-left: calc(-50vw + 50% + 1rem);
+  overflow-x: auto;
+">
+```{r, results='asis', echo=FALSE}
+cat(readLines("gr_int.md"), sep = "\n")
+```
+</div>
 
 ### 1.3 All growth rates
 
@@ -114,9 +134,9 @@ cat(readLines("allgr.md"), sep = "\n")
 
 Mean R-squared: 0.17
 
-N. negative coefficients expenditure: 16/27 = `r round(16/27 * 100, 1)`%
+N. negative coefficients expenditure: 15/27 = `r round(15/27 * 100, 1)`%
 
-N. significant coefficients expenditure: 12/27 = `r round(12/27 * 100, 1)`%
+N. significant coefficients expenditure: 11/27 = `r round(11/27 * 100, 1)`%
 
 Comments:
 
@@ -125,6 +145,16 @@ Comments:
 -   GDP almost always significant, when significant negative
 -   Investment when significant is negative
 -   Education is non significant, coefficients both ways
+
+<div style="
+  width: calc(100vw - 2rem);
+  margin-left: calc(-50vw + 50% + 1rem);
+  overflow-x: auto;
+">
+```{r, results='asis', echo=FALSE}
+cat(readLines("allgr_int.md"), sep = "\n")
+```
+</div>
 
 ### Final consideration
 
@@ -164,17 +194,27 @@ cat(readLines("autoreg_ab.md"), sep = "\n")
 ```
 </div>
 
-Mean R-squared: 0.89
+Mean R-squared: 0.91
 
-N. negative coefficients expenditure: 14/31 = `r round(14/31 * 100, 1)`%
+N. negative coefficients expenditure: 15/31 = `r round(15/31 * 100, 1)`%
 
-N. significant coefficients expenditure: 17/31 = `r round(17/31 * 100, 1)`%
+N. significant coefficients expenditure: 16/31 = `r round(16/31 * 100, 1)`%
 
 Comments:
 
 -   R2 clearly much higher with lag unemployment very significant
 -   Expenditure often is still not significant and coefficients go both ways
 -   Including GDP or poor binaries does not improve the model, nor does it lagging the expenditure variable
+
+<div style="
+  width: calc(100vw - 2rem);
+  margin-left: calc(-50vw + 50% + 1rem);
+  overflow-x: auto;
+">
+```{r, results='asis', echo=FALSE}
+cat(readLines("autoreg_ab_int.md"), sep = "\n")
+```
+</div>
 
 
 Autoregressive model were also run using growth rate of unemployment as y and including its lagged version as regressor:
@@ -208,7 +248,7 @@ cat(readLines("okun.md"), sep = "\n")
 
 Mean R-squared: 0.16
 
-N. negative coefficients expenditure: 22/37 = `r round(22/37 * 100, 1)`%
+N. negative coefficients expenditure: 21/37 = `r round(21/37 * 100, 1)`%
 
 N. significant coefficients expenditure: 12/37 = `r round(12/37 * 100, 1)`%
 
@@ -218,6 +258,16 @@ Comments:
 -   Expenditure not often significant, coefficients both ways
 -   Same models was tried with 3-years window, 5-years window, 7-years window. Increasing the window tends to yield higher Rsquared. No changes for the coefficients of expenditure
 -   Adding poor binaries increases a bit the Rsquared, but worsens relevance of expenditure
+
+<div style="
+  width: calc(100vw - 2rem);
+  margin-left: calc(-50vw + 50% + 1rem);
+  overflow-x: auto;
+">
+```{r, results='asis', echo=FALSE}
+cat(readLines("okun_int.md"), sep = "\n")
+```
+</div>
 
 ## 4 - Using averages
 
@@ -251,6 +301,16 @@ Comments:
 
 Overall results above are really similar to model 1.1, standard model with everything in absolute values.
 
+<div style="
+  width: calc(100vw - 2rem);
+  margin-left: calc(-50vw + 50% + 1rem);
+  overflow-x: auto;
+">
+```{r, results='asis', echo=FALSE}
+cat(readLines("avg_int.md"), sep = "\n")
+```
+</div>
+
 I also tried to run average models for growth rate of unemployment. Basically instead of taking the growth rate over 3y like in model 3, taking the average of each annual growth rate over the same period. Results were similar to model 3.
 
 ## 5 - GDP models
@@ -281,7 +341,7 @@ Mean R-squared: 0.21
 
 N. positive coefficients expenditure: 25/37 = `r round(25/37 * 100, 1)`%
 
-N. significant coefficients expenditure: 26/37 = `r round(26/37 * 100, 1)`%
+N. significant coefficients expenditure: 25/37 = `r round(25/37 * 100, 1)`%
 
 Comments:
 
@@ -321,4 +381,13 @@ Comments:
 -   Unemployment always negative and significant
 -   Poor dummies often significant and they are positive!!
 
-Should interpretation of the positive poor dummies that policies are working better in those regions?
+
+<div style="
+  width: calc(100vw - 2rem);
+  margin-left: calc(-50vw + 50% + 1rem);
+  overflow-x: auto;
+">
+```{r, results='asis', echo=FALSE}
+cat(readLines("gdp_yesp_int.md"), sep = "\n")
+```
+</div>
