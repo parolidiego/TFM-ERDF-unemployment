@@ -1,0 +1,1650 @@
+---
+title: "TFM final"
+output: html_document
+date: "`r Sys.Date()`"
+---
+
+# Libraries
+
+```{r}
+rm(list = ls())
+library(tidyverse)
+library(readxl)
+library(DataExplorer)
+library(ARDECO)
+library(slider)
+library(modelsummary)
+library(mice)
+```
+
+# ERDF expenditure data
+
+Source: [Cohesion Open Data Platform](https://cohesiondata.ec.europa.eu/Other/Historic-EU-payments-annual-timeseries-regionalise/tc55-7ysv/about_data)
+
+## Loading data
+
+```{r}
+funds <- read_csv("funds.csv")
+
+funds <- funds |>
+  # Selecting only ERDF data
+  filter(Fund == "ERDF") |> 
+  # Selecting only relevant variables
+  select(Country, NUTS2_ID, NUTS2_name, Year, 
+         Programming_Period, Modelled_annual_expenditure) |> 
+  rename(Budget_Cycle = Programming_Period,
+         Expenditure = Modelled_annual_expenditure)
+```
+
+As per source this expenditure data uses NUTS 2013 codes
+
+## Cleaning
+
+```{r}
+funds <- funds |> 
+  # Pivoting wider to obtain 1 column per budget period
+  pivot_wider(names_from = Budget_Cycle, values_from = Expenditure,
+              names_glue = "expenditure_{Budget_Cycle}_budget") |> 
+  arrange(NUTS2_ID, Year) 
+
+# Getting rid of years before 1989 as the budget periods covered start in 1989
+funds <- funds |> 
+  filter(Year >= 1989)
+```
+
+Checking that the NUTS codes used in the expenditure data are in line with the official 2013 NUTS codes
+
+```{r}
+nuts_codes <- nuts::all_nuts_codes
+
+# Getting the list of 2013 NUTS2 codes
+nuts_2013 <- nuts_codes |> 
+  filter(version == 2013) |> 
+  # NUTS2 codes are 4 characters long
+  filter(nchar(code) == 4) 
+
+# Checking which countries are there. I want EU28
+unique(nuts_2013$country)
+# Switzerland, Iceland, Liechtenstein, Norway are not in the EU so I must filter them out
+nuts_2013 <- nuts_2013 |> 
+  filter(!country %in% c("Switzerland", "Iceland", "Liechtenstein", "Norway"))
+
+# Finally convert the codes into a vector
+nuts_2013 <- nuts_2013 |> 
+  pull(code)
+
+# Vector of NUTS codes present in the funds dataset
+nuts_funds <- unique(funds$NUTS2_ID)
+
+setdiff(nuts_funds, nuts_2013)
+```
+
+There are some differencies. As mentioned here: [Historic EU investment](https://cohesiondata.ec.europa.eu/stories/s/Historic-EU-payments-by-region-1988-2022/47md-x4nq), "the 2013 version of the NUTS codes is used predominantly (in the dataset)". The ones above are some exceptions which I must fix for. They are mainly NUTS 2010 codes which have not been updated
+
+```{r}
+funds <- funds |> 
+  # Greece
+  mutate(NUTS2_ID = case_when(
+    NUTS2_ID == "EL11" ~ "EL51",
+    NUTS2_ID == "EL12" ~ "EL52",
+    NUTS2_ID == "EL13" ~ "EL53",
+    NUTS2_ID == "EL14" ~ "EL61",
+    NUTS2_ID == "EL21" ~ "EL54",
+    NUTS2_ID == "EL22" ~ "EL62",
+    NUTS2_ID == "EL23" ~ "EL63",
+    NUTS2_ID == "EL24" ~ "EL64",
+    NUTS2_ID == "EL25" ~ "EL65",
+    TRUE ~ NUTS2_ID
+  )) |> 
+  # France
+  mutate(NUTS2_ID = case_when(
+    NUTS2_ID == "FR92" ~ "FRA2",
+    NUTS2_ID == "FR93" ~ "FRA3",
+    NUTS2_ID == "FR94" ~ "FRA4",
+    TRUE ~ NUTS2_ID
+  )) 
+
+# FR91 had a boundary shift
+# UKI1 UKI2 had a boundary shift
+# UKZZ is a special region which I will delete anyway
+
+# A particular case is that of Slovenia SI01 SI02 
+# For some years the SI01, SI02 code is used for other years the other code is used
+funds |> 
+  filter(Country == "SI") |> 
+  distinct(Year, NUTS2_ID) |> 
+  group_by(Year) |> 
+  summarise(NUTS2_ID = paste(sort(unique(NUTS2_ID)), collapse = ", ")) |> 
+  arrange(Year)
+# I assume this is a mistake by the data provider, but it was always meant to use the NUTS 2013 version SI03 and SI04
+
+funds <- funds |>
+  # Slovenia
+  mutate(NUTS2_ID = case_when(
+    NUTS2_ID == "SI01" ~ "SI03",
+    NUTS2_ID == "SI02" ~ "SI04",
+    TRUE ~ NUTS2_ID
+  ))
+
+#Checking
+nuts_funds <- unique(funds$NUTS2_ID)
+setdiff(nuts_funds, nuts_2013)
+```
+
+The rest of the regions had a boundary shift and must be deleted as I cannot use their data (due to the boundary shift data cannot be linked properly to a NUTS-2013 code).
+
+```{r}
+funds <- funds |> 
+  filter(!NUTS2_ID %in% c("FR91", "UKI1", "UKI2", "UKZZ"))
+
+# Now all regions in the funds dataset should have a NUTS 2013 code
+nuts_funds <- unique(funds$NUTS2_ID)
+setdiff(nuts_funds, nuts_2013)
+
+# Checking also which NUTS 2013 codes are not in the funds dataset
+setdiff(nuts_2013, nuts_funds)
+```
+
+Perfect, all the codes in the `funds` dataset are now in NUTS2013,the NUTS2013 codes that are not in my dataset are codes that originate from boundary changes of the regions which I have deleted (plus ELZZ which we don't care about) so it makes sense.
+
+Now I must transform from NUTS2013 codes to NUTS2021 codes as my dependent variable and covariates are going to be in NUTS2021 code. Checking all the changes that there have been in the NUTS codes from [Eurostat NUTS webpage](https://ec.europa.eu/eurostat/web/nuts/history).
+
+```{r}
+nuts_2021 <- nuts_codes |> 
+  filter(version == 2021) |> 
+  filter(nchar(code) == 4)
+nuts_2021 <- nuts_2021 |> 
+  filter(!country %in% c("Switzerland", "Iceland", "Liechtenstein", "Norway"))
+nuts_2021 <- nuts_2021 |> 
+  pull(code)
+nuts_funds <- unique(funds$NUTS2_ID)
+
+setdiff(nuts_funds, nuts_2021)
+```
+
+```{r}
+# HR04 had some boundary change
+# HU10 had some boundary change
+# IE01 and IE02 had some boundary change
+# LT00 had some boundary change
+# PL12 had some boundary change
+# UKM2 and UKM3 had some boundary change
+
+# The rest only changed their code so I will fix for those and delete the others
+
+funds <- funds |> 
+   mutate(NUTS2_ID = case_when(
+    NUTS2_ID == "FR24" ~ "FRB0",
+    NUTS2_ID == "FR26" ~ "FRC1",
+    NUTS2_ID == "FR43" ~ "FRC2",
+    NUTS2_ID == "FR25" ~ "FRD1",
+    NUTS2_ID == "FR23" ~ "FRD2",
+    NUTS2_ID == "FR30" ~ "FRE1",
+    NUTS2_ID == "FR22" ~ "FRE2",
+    NUTS2_ID == "FR42" ~ "FRF1",
+    NUTS2_ID == "FR21" ~ "FRF2",
+    NUTS2_ID == "FR41" ~ "FRF3",
+    NUTS2_ID == "FR51" ~ "FRG0",
+    NUTS2_ID == "FR52" ~ "FRH0",
+    NUTS2_ID == "FR61" ~ "FRI1",
+    NUTS2_ID == "FR63" ~ "FRI2",
+    NUTS2_ID == "FR53" ~ "FRI3",
+    NUTS2_ID == "FR81" ~ "FRJ1",
+    NUTS2_ID == "FR62" ~ "FRJ2",
+    NUTS2_ID == "FR72" ~ "FRK1",
+    NUTS2_ID == "FR71" ~ "FRK2",
+    NUTS2_ID == "FR82" ~ "FRL0",
+    NUTS2_ID == "FR83" ~ "FRM0",
+    NUTS2_ID == "FRA1" ~ "FRY1",
+    NUTS2_ID == "FRA2" ~ "FRY2",
+    NUTS2_ID == "FRA3" ~ "FRY3",
+    NUTS2_ID == "FRA4" ~ "FRY4",
+    NUTS2_ID == "FRA5" ~ "FRY5",
+    NUTS2_ID == "PL11" ~ "PL71",
+    NUTS2_ID == "PL33" ~ "PL72",
+    NUTS2_ID == "PL31" ~ "PL81",
+    NUTS2_ID == "PL32" ~ "PL82",
+    NUTS2_ID == "PL34" ~ "PL84",
+    TRUE ~ NUTS2_ID))
+
+funds <- funds |> 
+  filter(!NUTS2_ID %in% c("IE01", "IE02", "LT00", "HU10", 
+                          "PL12", "UKM2", "UKM3", "HR04"))
+```
+
+Now all the remaining regions are in NUTS 2021 code. I'll check that each region has one name only.
+
+```{r}
+# Count the pairs
+counted <- funds |> group_by(NUTS2_ID, NUTS2_name) |> count() |> ungroup()
+# Check which NUTS2 ID appears with two different names
+duplicates <- counted |>  count(NUTS2_ID) |> filter(n>1)
+duplicates
+
+dup <- funds |> filter(NUTS2_ID == "EL51")
+unique(dup$NUTS2_ID)
+unique(dup$NUTS2_name)
+# Just minor grammatic difference
+
+dup <- funds |> filter(NUTS2_ID == "SI03")
+unique(dup$NUTS2_ID)
+unique(dup$NUTS2_name)
+# Will address this below
+
+funds <- funds |> 
+  mutate(NUTS2_name = case_when(
+    NUTS2_ID == "EL51" ~ "Anatoliki Makedonia, Thraki",
+    TRUE ~ NUTS2_name
+  ))
+```
+
+```{r}
+# Count the pairs
+counted <- funds |> group_by(NUTS2_ID, NUTS2_name) |> count() |> ungroup()
+# Checking which NUTS2_ID have the same name
+duplicates <- counted |>  count(NUTS2_name) |> filter(n>1)
+duplicates
+
+dup <- funds |> filter(NUTS2_name == "Zahodna Slovenija")
+unique(dup$NUTS2_ID)
+unique(dup$NUTS2_name)
+# SI03 NUTS2_name must be changed to Vzhodna Slovenija
+# SI04 NUTS2_name should remain Zahodna Slovenija
+
+funds <- funds |> 
+  mutate(NUTS2_name = case_when(
+    NUTS2_ID == "SI03" ~ "Vzhodna Slovenija",
+    NUTS2_ID == "SI04" ~ "Zahodna Slovenija",
+    TRUE ~ NUTS2_name
+  ))
+
+# Checking
+counted <- funds |> group_by(NUTS2_ID, NUTS2_name) |> count() |> ungroup()
+duplicates <- counted |>  count(NUTS2_name) |> filter(n>1)
+duplicates
+```
+
+Each region has its own name now.
+
+Now I have to make sure that each row is a region in a particular year, i.e. each region should only have one row per year (no multiple rows per year). 
+
+```{r}
+counted <- funds |> group_by(NUTS2_ID, NUTS2_name) |> count() |> ungroup()
+counted |> arrange(desc(n)) |> head()
+# There are some regions that have more than 34 observations (which are the most since data spans from 1989 to 2022)
+# This is due to the changes to the nuts code I have made above
+
+# Checking which of the regions are duplicates
+duplicates <- funds |> group_by(NUTS2_ID, NUTS2_name, Year) |> 
+  count() |> 
+  ungroup() |> 
+  filter(n>1)
+duplicates
+# Only the ones that needed help before are duplicates
+
+funds |> 
+  semi_join(duplicates, by = c("NUTS2_ID", "Year")) |> 
+  arrange(NUTS2_ID, Year)
+# No need to do anything special because there is no overlapping of data, just need to collapse all the data in one row
+
+funds <- funds |> 
+  # Summing the expenditure per year and region
+  summarise(across(starts_with("expenditure"), ~ sum(.x, na.rm = TRUE)), 
+            .by = c(Country, NUTS2_ID, NUTS2_name, Year)) |> 
+  # Turning all the 0s created by the operation above into NAs
+  mutate(across(starts_with("expenditure"), ~ ifelse(.x == 0, NA, .x)))
+```
+
+Now each row is a region-year combination. Next I have to make sure that each region is present for all the years that it needs to be present.
+
+```{r}
+unique(funds$Country)
+```
+
+Unfortunately there is no Ireland because all its NUTS2 codes had boundary changes and thus have been deleted. There is also no Lithuania because its only NUTS 2 region has been deleted due to being split it up (thus boundary changes).
+
+```{r}
+# Counting the number of countries per year
+funds |> 
+  group_by(Year) |> 
+  summarise(n_countries = n_distinct(Country))
+
+# Counting the number of regions
+funds |> 
+  group_by(Year) |> 
+  summarise(n_regions = n_distinct(NUTS2_ID))
+```
+
+As some regions are not there even in years where they should be (showed by the fluctuating number of regions/countries per year) I need to create synthetic data for them (I assume that if they are not there is because they did not recieve any money that year).
+
+```{r}
+# Making sure all regions from the 1990 are also in 1989
+
+# Looking at the differences between the vectors of unique values
+NUTS_1989 <- funds |> filter(Year == 1989) |> pull(NUTS2_ID) |> unique()
+NUTS_1990 <- funds |> filter(Year == 1990) |> pull(NUTS2_ID) |> unique()
+missing_1989 <- setdiff(NUTS_1990, NUTS_1989)
+missing_1989
+
+# Creating appropriate data for the missing regions
+missing_1989 <- funds |> 
+  filter(NUTS2_ID %in% missing_1989) |> 
+  filter(Year == 1990) |> 
+  # Changing the year and setting expenditure to 0
+  mutate(Year = 1989,
+         "expenditure_1989-1993_budget"= 0)
+# Adding the data back into the original main df
+funds <- funds |> 
+  rbind(missing_1989) |> 
+  arrange(NUTS2_ID, Year)
+```
+
+```{r}
+# Looking at the '95 enlargement
+NUTS_1993 <- funds |> filter(Year == 1993) |> pull(NUTS2_ID) |> unique()
+NUTS_1994 <- funds |> filter(Year == 1994) |> pull(NUTS2_ID) |> unique()
+missing_1993 <- setdiff(NUTS_1994, NUTS_1993)
+missing_1993
+# This should not be there as they were not in the EU before 1995
+# This likely happens because of the statistical modelling of the expenditure
+
+# For the countries that join the EU in 1995 I want all expenditure to be in 1995
+# Create a df storing their data
+df <- funds |>
+  filter(Country %in% c("AT", "FI", "SE") & Year == 1994)
+# Filtering them out of the main df
+funds <- funds |>
+  filter(!(Country %in% c("AT", "FI", "SE") & Year == 1994))
+# Modifying and adding that data to the main df for year 1995
+df <- df |> 
+  mutate(Year = 1995) |> 
+  select(Country, NUTS2_ID, NUTS2_name, Year, `expenditure_1994-1999_budget`) |> 
+  rename("exp_to_be_added" = `expenditure_1994-1999_budget`)
+# Adding the data back into the main df and summing the expenditure
+funds <- funds |> 
+  left_join(df, by = c("Country", "NUTS2_ID", "NUTS2_name", "Year")) |> 
+  mutate(`expenditure_1994-1999_budget` = 
+           rowSums(across(c(`expenditure_1994-1999_budget`, exp_to_be_added)), 
+                   na.rm = TRUE)) |> 
+  select(-exp_to_be_added) |> 
+  mutate(`expenditure_1994-1999_budget` = ifelse(`expenditure_1994-1999_budget` == 0,
+                                                 NA, `expenditure_1994-1999_budget`))
+```
+
+```{r}
+# Now the '95 enlargement is fine
+NUTS_1994 <- funds |> filter(Year == 1994) |> pull(NUTS2_ID) |> unique()
+NUTS_1995 <- funds |> filter(Year == 1995) |> pull(NUTS2_ID) |> unique()
+missing_1994 <- setdiff(NUTS_1995, NUTS_1994)
+missing_1994
+# Only regions from the countries that joined in '95 make up the difference
+```
+
+```{r}
+# From the 2000s regions of the 2004 enlargement appear
+NUTS_1999 <- funds |> filter(Year == 1999) |> pull(NUTS2_ID) |> unique()
+NUTS_2000 <- funds |> filter(Year == 2000) |> pull(NUTS2_ID) |> unique()
+missing_2000 <- setdiff(NUTS_2000, NUTS_1999)
+missing_2000
+NUTS_2001 <- funds |> filter(Year == 2001) |> pull(NUTS2_ID) |> unique()
+missing_2001 <- setdiff(NUTS_2001, NUTS_2000)
+missing_2001
+NUTS_2002 <- funds |> filter(Year == 2002) |> pull(NUTS2_ID) |> unique()
+missing_2002 <- setdiff(NUTS_2002, NUTS_2001)
+missing_2002
+
+# This is the same problem as for the previous enlargement
+# Creating a df storing the data for the countries that joined in 2004 in the years before
+df <- funds |>
+  filter(Country %in% c("CY", "CZ", "LV", "MT", "PL", "SK", "SI", "HU", "EE") & 
+           Year %in% c(2000, 2001, 2002, 2003))
+# Deleting that same data from the main df
+funds <- funds |>
+  filter(!(Country %in% c("CY", "CZ", "LV", "MT", "PL", "SK", "SI", "HU", "EE") & 
+           Year %in% c(2000, 2001, 2002, 2003)))
+# Modifying the data in an appropriate way
+df <- df |> 
+  # Changing the year
+  mutate(Year = 2004) |> 
+  select(Country, NUTS2_ID, NUTS2_name, Year, `expenditure_2000-2006_budget`) |>
+  # Summing all the expenditure for the years before (which have all been changed to 2004)
+  summarise(exp_to_be_added = sum(`expenditure_2000-2006_budget`, na.rm = TRUE), 
+            .by = c(Country, NUTS2_ID, NUTS2_name, Year))
+# Adding the data back into the main original df and summing expenditure
+funds <- funds |> 
+  left_join(df, by = c("Country", "NUTS2_ID", "NUTS2_name", "Year")) |> 
+  mutate(`expenditure_2000-2006_budget` = 
+           rowSums(across(c(`expenditure_2000-2006_budget`, exp_to_be_added)), 
+                   na.rm = TRUE)) |> 
+  select(-exp_to_be_added) |> 
+  mutate(`expenditure_2000-2006_budget` = ifelse(`expenditure_2000-2006_budget` == 0,
+                                                 NA, `expenditure_2000-2006_budget`))
+```
+
+```{r}
+# Some regions do not appear for a few years, I assume they did not receive any money
+NUTS_2004 <- funds |> filter(Year == 2004) |> pull(NUTS2_ID) |> unique()
+NUTS_2005 <- funds |> filter(Year == 2005) |> pull(NUTS2_ID) |> unique()
+missing_2005 <- setdiff(NUTS_2004, NUTS_2005)
+missing_2005
+NUTS_2006 <- funds |> filter(Year == 2006) |> pull(NUTS2_ID) |> unique()
+missing_2006 <- setdiff(NUTS_2004, NUTS_2006)
+missing_2006
+# Fixing for 2005
+missing_2005 <- funds |> 
+  filter(NUTS2_ID %in% missing_2005) |> 
+  filter(Year == 2004) |> 
+  mutate(Year = 2005,
+         "expenditure_2000-2006_budget"= 0)
+funds <- funds |> 
+  rbind(missing_2005) |> 
+  arrange(NUTS2_ID, Year)
+# Fixing for 2006
+missing_2006 <- funds |> 
+  filter(NUTS2_ID %in% missing_2006) |> 
+  filter(Year == 2004) |> 
+  mutate(Year = 2006,
+         "expenditure_2000-2006_budget"= 0)
+funds <- funds |> 
+  rbind(missing_2006) |> 
+  arrange(NUTS2_ID, Year)
+```
+
+```{r}
+# Checking enlargement '07
+NUTS_2006 <- funds |> filter(Year == 2006) |> pull(NUTS2_ID) |> unique()
+NUTS_2007 <- funds |> filter(Year == 2007) |> pull(NUTS2_ID) |> unique()
+missing_2006 <- setdiff(NUTS_2007, NUTS_2006)
+# Croatia appears earlier than it should
+missing_2006
+
+# Again I will set all expenditure for Croatia to be in 2013
+df <- funds |>
+  filter(Country == "HR" & 
+           Year %in% c(2007, 2008, 2009, 2010, 2011, 2012))
+# Filtering them out of the main df
+funds <- funds |>
+  filter(!(Country == "HR" & 
+           Year %in% c(2007, 2008, 2009, 2010, 2011, 2012)))
+# Modifying and adding that data to the main df for year 2013
+df <- df |> 
+  mutate(Year = 2013) |> 
+  select(Country, NUTS2_ID, NUTS2_name, Year, `expenditure_2007-2013_budget`) |> 
+  summarise(exp_to_be_added = sum(`expenditure_2007-2013_budget`, na.rm = TRUE), 
+            .by = c(Country, NUTS2_ID, NUTS2_name, Year))
+funds <- funds |> 
+  left_join(df, by = c("Country", "NUTS2_ID", "NUTS2_name", "Year")) |> 
+  mutate(`expenditure_2007-2013_budget` = 
+           rowSums(across(c(`expenditure_2007-2013_budget`, exp_to_be_added)), 
+                   na.rm = TRUE)) |> 
+  select(-exp_to_be_added) |> 
+  mutate(`expenditure_2007-2013_budget` = ifelse(`expenditure_2007-2013_budget` == 0,
+                                                 NA, `expenditure_2007-2013_budget`))
+```
+
+Now everything should be fine, even though Brexit happened they were still allowed to continue access to funds allocated for 2014-2020 budegt (source: [UK govt](https://www.gov.uk/guidance/eu-funded-programmes-under-the-withdrawal-agreement))
+
+```{r}
+# Counting the number of countries per year
+funds |> 
+  group_by(Year) |> 
+  summarise(n_countries = n_distinct(Country))
+
+# Counting the number of regions
+funds |> 
+  group_by(Year) |> 
+  summarise(n_regions = n_distinct(NUTS2_ID))
+```
+
+Setting the NAs for all the cells that are outside of the expenditure timeframe and setting 0s in the case that there is no expenditure, but observations are within the expenditure timeframe.
+
+```{r}
+# '89-'93 goes on until '98
+funds |>  filter(`expenditure_1989-1993_budget` > 0) |> 
+  summarise(min(Year), max(Year))
+# Modifying the dataframe accordignly
+funds <- funds |>
+  mutate(
+    `expenditure_1989-1993_budget` = case_when(
+      Year >= 1989 & Year <= 1998 & is.na(`expenditure_1989-1993_budget`) ~ 0,
+      Year < 1989 | Year > 1998 ~ NA,
+      TRUE ~ `expenditure_1989-1993_budget`))
+
+# '94-'99 goes on until '02
+funds |>  filter(`expenditure_1994-1999_budget` > 0) |> 
+  summarise(min(Year), max(Year))
+# Modifying the dataframe accordignly
+funds <- funds |>
+  mutate(
+    `expenditure_1994-1999_budget` = case_when(
+      Year >= 1994 & Year <= 2002 & is.na(`expenditure_1994-1999_budget`) ~ 0,
+      Year < 1994 | Year > 2002 ~ NA,
+      TRUE ~ `expenditure_1994-1999_budget`))
+
+# '00-'06 goes on until '09
+funds |>  filter(`expenditure_2000-2006_budget` > 0) |> 
+  summarise(min(Year), max(Year))
+# Modifying the dataframe accordignly
+funds <- funds |>
+  mutate(
+    `expenditure_2000-2006_budget` = case_when(
+      Year >= 2000 & Year <= 2009 & is.na(`expenditure_2000-2006_budget`) ~ 0,
+      Year < 2000 | Year > 2009 ~ NA,
+      TRUE ~ `expenditure_2000-2006_budget`))
+
+# '07-'13 goes on until '15
+funds |>  filter(`expenditure_2007-2013_budget` > 0) |> 
+  summarise(min(Year), max(Year))
+# Modifying the dataframe accordignly
+funds <- funds |>
+  mutate(
+    `expenditure_2007-2013_budget` = case_when(
+      Year >= 2007 & Year <= 2015 & is.na(`expenditure_2007-2013_budget`) ~ 0,
+      Year < 2007 | Year > 2015 ~ NA,
+      TRUE ~ `expenditure_2007-2013_budget`))
+
+# '14-'20 goes on until '22
+funds |>  filter(`expenditure_2014-2020_budget` > 0) |> 
+  summarise(min(Year), max(Year))
+# Modifying the dataframe accordignly
+funds <- funds |>
+  mutate(
+    `expenditure_2014-2020_budget` = case_when(
+      Year >= 2014 & Year <= 2022 & is.na(`expenditure_2014-2020_budget`) ~ 0,
+      Year < 2014 | Year > 2022 ~ NA,
+      TRUE ~ `expenditure_2014-2020_budget`))
+```
+
+# Other data
+
+These are all the variables available in the ARDECO database, which will be our source for control variables.
+
+[Annual Regional Database of the European Commission's Directorate General for Regional and Urban Policy](https://urban.jrc.ec.europa.eu/ardeco/explorer?lng=en)
+
+```{r}
+available_variables <- ardeco_get_variable_list()
+head(available_variables)
+```
+
+## Unemployment
+
+[Metadata](https://urban.jrc.ec.europa.eu/dataset/ARDECO-RNUTN/metadata?lng=en)
+
+```{r}
+ardeco_get_dataset_list("RNUTN")
+
+# unemployment <- ardeco_get_dataset_data("RNUTN", version = "2021", level = "2")
+# write.csv(unemployment, "unemployment.csv", row.names = FALSE)
+
+unemployment <- read_csv("unemployment.csv")
+
+unemployment <- unemployment |> 
+  filter(YEAR <= 2022) |> 
+  filter(YEAR >= 1989)
+head(unemployment)
+
+unique(unemployment$NUTSCODE) |> setdiff(unique(funds$NUTS2_ID))
+unique(funds$NUTS2_ID) |> setdiff(unique(unemployment$NUTSCODE))
+# It looks like all unemployment data is present only 1 regions is missing
+```
+
+Merging unemployment data with expenditure data
+
+```{r}
+unemployment <- unemployment |> 
+  select(NUTSCODE, YEAR, VALUE)
+
+data <- funds |> 
+  left_join(unemployment, by = join_by(NUTS2_ID == NUTSCODE, Year == YEAR)) |> 
+  rename(unemployment = VALUE)
+```
+
+## GDP
+
+[Metadata](https://urban.jrc.ec.europa.eu/dataset/ARDECO-SOVGDP/metadata)
+
+```{r}
+ardeco_get_dataset_list("SOVGDP")
+
+# gdp <- ardeco_get_dataset_data("SOVGDP", version = "2021", level = "2")
+# write.csv(gdp, "gdp.csv", row.names = FALSE)
+
+gdp <- read_csv("gdp.csv")
+
+gdp <- gdp |> 
+  filter(YEAR <= 2022) |> 
+  filter(YEAR >= 1989) |> 
+  filter(UNIT == "EUR2015") 
+head(gdp)
+
+unique(gdp$NUTSCODE) |> setdiff(unique(funds$NUTS2_ID))
+unique(funds$NUTS2_ID) |> setdiff(unique(gdp$NUTSCODE))
+# It looks like all gdp data is present
+```
+
+Merging gdp data with expenditure data
+
+```{r}
+gdp <- gdp |> 
+  select(NUTSCODE, YEAR, VALUE)
+
+data <- data |> 
+  left_join(gdp, by = join_by(NUTS2_ID == NUTSCODE, Year == YEAR)) |> 
+  rename(gdp = VALUE)
+```
+
+## Population
+
+[Metadata](https://urban.jrc.ec.europa.eu/dataset/ARDECO-SNPTD/metadata?lng=en)
+
+```{r}
+ardeco_get_dataset_list("SNPTD")
+
+# population <- ardeco_get_dataset_data("SNPTD", version = "2021", level = "2")
+# write.csv(population, "population.csv", row.names = FALSE)
+
+population <- read_csv("population.csv")
+
+population <- population |> 
+  filter(YEAR <= 2022) |> 
+  filter(YEAR >= 1989)
+head(population)
+
+unique(population$NUTSCODE) |> setdiff(unique(funds$NUTS2_ID))
+unique(funds$NUTS2_ID) |> setdiff(unique(population$NUTSCODE))
+# It looks like all population data is present
+```
+
+Merging population data with expenditure data
+
+```{r}
+population <- population |> 
+  select(NUTSCODE, YEAR, VALUE)
+
+data <- data |> 
+  left_join(population, by = join_by(NUTS2_ID == NUTSCODE, Year == YEAR)) |> 
+  rename(population = VALUE)
+```
+
+## Education
+
+```{r}
+ardeco_get_dataset_list("RPDTN")
+
+# education <- ardeco_get_dataset_data("RPDTN", version = "2021", level = "2")
+# write.csv(education, "education.csv", row.names = FALSE)
+
+education <- read_csv("education.csv")
+
+education <- education |> 
+  filter(YEAR <= 2022) |> 
+  filter(YEAR >= 1989)
+head(education)
+
+education <- education |> 
+  filter(ISCED11 == "Tertiary education (levels 5-8)")
+
+unique(education$NUTSCODE) |> setdiff(unique(funds$NUTS2_ID))
+unique(funds$NUTS2_ID) |> setdiff(unique(education$NUTSCODE))
+# It looks like all education data is present
+```
+
+Merging education data with expenditure data
+
+```{r}
+education <- education |> 
+  select(NUTSCODE, YEAR, VALUE)
+
+data <- data |> 
+  left_join(education, by = join_by(NUTS2_ID == NUTSCODE, Year == YEAR)) |> 
+  rename(education = VALUE)
+```
+
+## Investment
+
+[Metadata](https://urban.jrc.ec.europa.eu/dataset/ARDECO-ROIGT/metadata?lng=en)
+
+```{r}
+ardeco_get_dataset_list("ROIGT")
+
+# investment <- ardeco_get_dataset_data("ROIGT", version = "2021", level = "2")
+# write.csv(investment, "investment.csv", row.names = FALSE)
+
+investment <- read_csv("investment.csv")
+
+investment <- investment |> 
+  filter(YEAR <= 2022) |> 
+  filter(YEAR >= 1989) |> 
+  filter(UNIT == "Million EUR2015")
+head(investment)
+
+unique(investment$NUTSCODE) |> setdiff(unique(funds$NUTS2_ID))
+unique(funds$NUTS2_ID) |> setdiff(unique(investment$NUTSCODE))
+# It looks like all investment data is present
+```
+
+Merging investment data with expenditure data
+
+```{r}
+investment <- investment |> 
+  select(NUTSCODE, YEAR, VALUE)
+
+data <- data |> 
+  left_join(investment, by = join_by(NUTS2_ID == NUTSCODE, Year == YEAR)) |> 
+  rename(investment = VALUE)
+```
+
+Checks:
+
+```{r}
+min(education$YEAR)
+# education data is only from 2000 onward so I am only going to keep data from that year onward
+
+# I will be dropping the budget period which I am not going to use
+data <- data |> 
+  select(-`expenditure_1989-1993_budget`)
+
+plot_missing(data)
+plot_missing(data |> filter(Year>=1993))
+summary(data |> filter(Year>=1993))
+```
+
+I will impute the few missing data I have from the 1995 onward:
+
+```{r}
+data <- data |> 
+  filter(Year>=1993)
+
+# Step 1: Set the columns you want to impute
+target_vars <- c("education", "gdp")
+
+# Step 2: Create predictor matrix
+pred_matrix <- make.predictorMatrix(data)
+pred_matrix[, c("Country", "NUTS2_ID", "NUTS2_name", "Year",
+                "expenditure_1994-1999_budget", "expenditure_2000-2006_budget",
+                "expenditure_2007-2013_budget", "expenditure_2014-2020_budget",
+                "population", "investment", "unemployment")] <- 0
+pred_matrix[c("Country", "NUTS2_name", 
+              "expenditure_1994-1999_budget", "expenditure_2000-2006_budget",
+              "expenditure_2007-2013_budget", "expenditure_2014-2020_budget"), ] <- 0
+
+# Step 3: Exclude non-target columns from being imputed
+method_vec <- rep("", ncol(data))
+names(method_vec) <- colnames(data)
+method_vec[target_vars] <- "pmm" 
+
+# Step 4: Run MICE only on the specified target columns
+imputed <- mice(data,
+                m = 1,
+                method = method_vec,
+                predictorMatrix = pred_matrix,
+                seed = 123)
+
+# Step 5 (optional): Extract one completed dataset
+data <- complete(imputed)
+
+# Check imputed values
+summary(data)
+plot_missing(data)
+```
+
+## Binary - poor regions
+
+### 2014-2020
+
+Source: [Cohesion Open Data](https://cohesiondata.ec.europa.eu/2014-2020/Regions-by-cohesion-policy-category-2014-2020/b6uw-xiie/about_data) checked from [Commission Implementing decision 2014/99/EU](https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:32014D0099#ntr1-L_2014050EN.01002401-E0001)
+
+```{r}
+cat14_20 <- read_csv("cat14_20.csv")
+
+# Selecting only the least developed regions
+cat14_20 <- cat14_20 |> 
+  select(nuts_id, catg_name) |> 
+  filter(catg_name == "Less developed")
+
+# NUTS 2006 used by this categorization vs NUTS 2021 used in our dataset
+# Which of these regions is not present in the dataset due to NUTS discrepancies
+missing_regions <- anti_join(cat14_20, data, by = c("nuts_id" = "NUTS2_ID"))
+
+# Regions which I have deleted because I couldn't use their data
+deleted_regions <- c("FR91", "UKI1", "UKI2", "UKZZ", "IE01", "IE02", 
+                     "LT00", "HU10", "PL12", "UKM2", "UKM3", "HR04")
+
+# Regions that I should try to identify
+missing_regions <- missing_regions |> 
+  filter(!nuts_id %in% deleted_regions)
+missing_regions
+
+# These are all regions which have undergone only code name changes or minor reshuffling 
+cat14_20 <- cat14_20 |> 
+  mutate(nuts_id = case_when(
+    nuts_id == "GR11" ~ "EL51",
+    nuts_id == "GR12" ~ "EL52",
+    nuts_id == "GR14" ~ "EL61",
+    nuts_id == "GR21" ~ "EL54",
+    nuts_id == "GR23" ~ "EL63",
+    nuts_id == "FR92" ~ "FRY2",
+    nuts_id == "FR93" ~ "FRY3",
+    nuts_id == "FR94" ~ "FRY4",
+    nuts_id == "PL11" ~ "PL71",
+    nuts_id == "PL31" ~ "PL81",
+    nuts_id == "PL32" ~ "PL82",
+    nuts_id == "PL33" ~ "PL72",
+    nuts_id == "PL34" ~ "PL84",
+    nuts_id == "SI01" ~ "SI03",
+    TRUE ~ nuts_id
+  ))
+
+anti_join(cat14_20, data, by = c("nuts_id" = "NUTS2_ID"))
+```
+
+The only regions that have been left out are part of the regions which I have previously deleted above because of boundary shifts. So I join them and make sure they appear for the whole budget period they refer to + n years of implementation
+
+```{r}
+data <- data |> 
+  left_join(cat14_20, by = c("NUTS2_ID" = "nuts_id")) |> 
+  rename(poor14_20 = catg_name) |> 
+  mutate(poor14_20 = case_when(
+    Year >= 2014 & is.na(poor14_20) ~ 0,
+    Year >= 2014 & poor14_20 == "Less developed" ~ 1,
+    Year < 2014 ~ NA,
+  ))
+```
+
+### 2007-2013
+
+Source: [Cohesion Open Data](https://cohesiondata.ec.europa.eu/2007-2013/Eligible-regions-2007-2013/fz3v-c3qc/about_data), checked from [Commission decision 2006/595/EC](https://eur-lex.europa.eu/legal-content/EN/ALL/?uri=CELEX%3A32006D0595) and [Commission decision 2007/189/EC](https://eur-lex.europa.eu/legal-content/EN/ALL/?uri=CELEX%3A32007D0189)
+
+```{r}
+cat07_13 <- read_csv("cat07_13.csv")
+
+# Selecting only the least developed regions
+cat07_13 <- cat07_13 |> 
+  select(nuts_id, objective_code) |> 
+  filter(objective_code == "Conv")
+
+# Which of these regions is not present in the dataset due to NUTS discrepancies
+missing_regions <- anti_join(cat07_13, data, by = c("nuts_id" = "NUTS2_ID"))
+
+# Regions which I have deleted because I couldn't use their data
+deleted_regions <- c("FR91", "UKI1", "UKI2", "UKZZ", "IE01", "IE02", 
+                     "LT00", "HU10", "PL12", "UKM2", "UKM3", "HR04")
+
+# Regions that I should try to identify
+missing_regions <- missing_regions |> 
+  filter(!nuts_id %in% deleted_regions)
+missing_regions
+
+# These are all regions which have undergone only code name changes or minor reshuffling 
+cat07_13 <- cat07_13 |> 
+  mutate(nuts_id = case_when(
+    nuts_id == "DE41" ~ "DE40",
+    nuts_id == "DED1" ~ "DED4",
+    # DEE0 was created by merging DEE1 (poor), DEE2 (phasing out), DEE3 (poor)
+    # So I'll consider it poor and I'll convert one of their code into DE00 in here
+    # and then deleting the other below
+    nuts_id == "DEE1" ~ "DEE0",
+    nuts_id == "GR11" ~ "EL51",
+    nuts_id == "GR14" ~ "EL61",
+    nuts_id == "GR21" ~ "EL54",
+    nuts_id == "GR22" ~ "EL62",
+    nuts_id == "GR23" ~ "EL63",
+    nuts_id == "GR25" ~ "EL65",
+    nuts_id == "GR41" ~ "EL41",
+    nuts_id == "GR43" ~ "EL43",
+    nuts_id == "FR92" ~ "FRY2",
+    nuts_id == "FR93" ~ "FRY3",
+    nuts_id == "FR94" ~ "FRY4",
+    # In the commission decision BG and RO use different codes which are more current
+    nuts_id == "BG11" ~ "BG31",
+    nuts_id == "BG12" ~ "BG32",
+    nuts_id == "BG13" ~ "BG33",
+    nuts_id == "BG21" ~ "BG34",
+    nuts_id == "BG22" ~ "BG41",
+    nuts_id == "BG23" ~ "BG42",
+    nuts_id == "PL11" ~ "PL71",
+    nuts_id == "PL31" ~ "PL81",
+    nuts_id == "PL32" ~ "PL82",
+    nuts_id == "PL33" ~ "PL72",
+    nuts_id == "PL34" ~ "PL84",
+    nuts_id == "RO01" ~ "RO21",
+    nuts_id == "RO02" ~ "RO22",
+    nuts_id == "RO03" ~ "RO31",
+    nuts_id == "RO04" ~ "RO41",
+    nuts_id == "RO05" ~ "RO42",
+    nuts_id == "RO06" ~ "RO11",
+    nuts_id == "RO07" ~ "RO12",
+    nuts_id == "RO08" ~ "RO32",
+    TRUE ~ nuts_id
+  )) |> 
+  filter(nuts_id != "DEE3") |>
+  # Slovenia SI00 was split into SI01 and SI02 which are then recoded as SI03 and SI04
+  # So I need to add those two lines
+  filter(nuts_id != "SI00") |>
+  rbind(c("SI03", "Conv")) |>
+  rbind(c("SI04", "Conv"))
+
+anti_join(cat07_13, data, by = c("nuts_id" = "NUTS2_ID"))
+```
+
+The only regions that have been left out are part of the regions which I have previously deleted above because of boundary shifts. So I join them and make sure they appear for the whole budget period they refer to + n years of implementation
+
+```{r}
+data <- data |> 
+  left_join(cat07_13, by = c("NUTS2_ID" = "nuts_id")) |> 
+  rename(poor07_13 = objective_code) |> 
+  mutate(poor07_13 = case_when(
+    Year >= 2007 & Year <=2015 & is.na(poor07_13) ~ 0,
+    Year >= 2007 & Year <=2015 & poor07_13 == "Conv" ~ 1,
+    Year < 2007 ~ NA,
+    Year > 2015 ~ NA
+  ))
+```
+
+### 2000-2006
+
+Source: [Cohesion Open Data](https://cohesiondata.ec.europa.eu/2000-2006/Eligible-population-2000-2006/4f9w-qbvh/about_data), checked from [Commission decision 1999/502/EC](https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX%3A01999D0502-20040501)
+
+```{r}
+cat00_06 <- read_csv("cat00_06.csv")
+
+cat00_06 <- cat00_06 |> 
+  # Selecting only the least developed regions: objective 1
+  filter(pop_obj1 > 0) |> 
+  # Converting NUTS3 into NUTS2 codes
+  mutate(nuts_id = substr(nuts_id, 1, 4)) |> 
+  pull(nuts_id) |> 
+  unique()
+
+# Adding a dummy which will then be merged
+cat00_06 <- tibble(nuts_id = cat00_06) |> 
+  mutate(objective_code = 1)
+
+# Which of these regions is not present in the dataset due to NUTS discrepancies
+missing_regions <- anti_join(cat00_06, data, by = c("nuts_id" = "NUTS2_ID"))
+
+# Regions which I have deleted because I couldn't use their data
+deleted_regions <- c("FR91", "UKI1", "UKI2", "UKZZ", "IE01", "IE02", 
+                     "LT00", "HU10", "PL12", "UKM2", "UKM3", "HR04")
+
+# Regions that I should try to identify
+missing_regions <- missing_regions |> 
+  filter(!nuts_id %in% deleted_regions)
+missing_regions
+
+# These are all regions which have undergone only code name changes or minor reshuffling 
+cat00_06 <- cat00_06 |> 
+  mutate(nuts_id = case_when(
+    # DE40 was created by merging DE41 (poor), and DE42 (poor)
+    # So I'll consider it poor and I'll convert one of their code into DE40 in here
+    # and then deleting the other below
+    nuts_id == "DE41" ~ "DE40",
+    nuts_id == "DED1" ~ "DED4",
+    nuts_id == "DED3" ~ "DED5",
+    # DEE0 was created by merging DEE1 (poor), DEE2 (poor), DEE3 (poor)
+    # So I'll consider it poor and I'll convert one of their code into DE00 in here
+    # and then deleting the other below
+    nuts_id == "DEE1" ~ "DEE0",
+    nuts_id == "GR11" ~ "EL51",
+    nuts_id == "GR12" ~ "EL52",
+    nuts_id == "GR13" ~ "EL53",
+    nuts_id == "GR14" ~ "EL61",
+    nuts_id == "GR21" ~ "EL54",
+    nuts_id == "GR22" ~ "EL62",
+    nuts_id == "GR23" ~ "EL63",
+    nuts_id == "GR24" ~ "EL64",
+    nuts_id == "GR25" ~ "EL65",
+    nuts_id == "GR30" ~ "EL30",
+    nuts_id == "GR41" ~ "EL41",
+    nuts_id == "GR42" ~ "EL42",
+    nuts_id == "GR43" ~ "EL43",
+    nuts_id == "FR92" ~ "FRY2",
+    nuts_id == "FR93" ~ "FRY3",
+    nuts_id == "FR94" ~ "FRY4",
+    nuts_id == "PL11" ~ "PL71",
+    nuts_id == "PL31" ~ "PL81",
+    nuts_id == "PL32" ~ "PL82",
+    nuts_id == "PL33" ~ "PL72",
+    nuts_id == "PL34" ~ "PL84",
+    # FI1D was created by merging FI13 (poor), FI1A (poor)
+    # So I'll consider it poor and I'll convert one of their code into FI1D in here
+    # and then deleting the other below
+    nuts_id == "FI13" ~ "FI1D",
+    nuts_id == "SE06" ~ "SE31",
+    nuts_id == "SE07" ~ "SE32",
+    nuts_id == "SE08" ~ "SE33",
+    nuts_id == "UKD5" ~ "UKD7",
+    TRUE ~ nuts_id
+  )) |> 
+  filter(nuts_id != "DE42") |> 
+  filter(nuts_id != "DEE3") |>
+  filter(nuts_id != "DEE2") |>
+  filter(nuts_id != "FI1A") |> 
+  # Slovenia SI00 was split into SI01 and SI02 which are then recoded as SI03 and SI04
+  # So I need to add those two lines
+  filter(nuts_id != "SI00") |>
+  rbind(c("SI03", 1)) |>
+  rbind(c("SI04", 1))
+
+anti_join(cat00_06, data, by = c("nuts_id" = "NUTS2_ID"))
+```
+
+The only regions that have been left out are part of the regions which I have previously deleted above because of boundary shifts. So I join them and make sure they appear for the whole budget period they refer to + n years of implementation
+
+```{r}
+data <- data |> 
+  left_join(cat00_06, by = c("NUTS2_ID" = "nuts_id")) |> 
+  rename(poor00_06 = objective_code) |> 
+  mutate(poor00_06 = case_when(
+    Year >= 2000 & Year <=2009 & is.na(poor00_06) ~ 0,
+    Year >= 2000 & Year <=2009 & poor00_06 == 1 ~ 1,
+    Year < 2000 ~ NA,
+    Year > 2009 ~ NA,
+  ))
+```
+
+# Exploratory data analysis
+
+To be done
+
+# Regressions
+
+## Getting ready for regression
+
+```{r}
+plot_intro(data)
+plot_missing(data)
+str(data)
+```
+
+Modifying some variables
+
+```{r}
+data <- data |> 
+  mutate(across(starts_with("expenditure"), ~ .x/population)) |> 
+  mutate(unemployment = ((unemployment*1000)/population)*1000) |> 
+  mutate(investment = (investment*1000000/population)) |> 
+  arrange(NUTS2_ID, Year)
+
+data <- data |>
+  select(-population)
+```
+
+I will now handle missing data in unemployment variable. 
+
+```{r}
+plot_missing(data)
+
+data |> filter(is.na(unemployment))
+# Finland has no unemployment data before 2000
+# FI20 has no unemployment data ever
+# For the others I will use the mean between the last available data (done manually)
+# FRY2 --> 90.424615 1999 to 2000
+# FRY3 --> 94.09213 1999 to 2000
+# FRY4 --> 110.508205 1999 to 2000
+# ITC2 --> 14.90351 1999 to 2004
+# PT20 --> 11.958335 2001 to 2002
+# PT20 --> 15.89781 2005 to 2006
+# PT30 --> 13.675395 2001 to 2002
+# UKE2 --> 22.149575 2001
+# UKK3 --> 21.150545 2003
+# UKM6 --> 12.15795 2019
+
+data <- data |> 
+  mutate(unemployment = case_when(
+    NUTS2_ID == "FI20" ~ NA_real_,
+    NUTS2_ID == "FRY2" & Year == 2000 ~ 90.424615,
+    NUTS2_ID == "FRY2" & Year == 1999 ~ 90.424615,
+    NUTS2_ID == "FRY3" & Year == 2000 ~ 94.09213,
+    NUTS2_ID == "FRY3" & Year == 1999 ~ 94.09213,
+    NUTS2_ID == "FRY4" & Year == 2000 ~ 110.508205,
+    NUTS2_ID == "FRY4" & Year == 1999 ~ 110.508205,
+    NUTS2_ID == "ITC2" & Year == 2004 ~ 14.90351,
+    NUTS2_ID == "ITC2" & Year == 2003 ~ 14.90351,
+    NUTS2_ID == "ITC2" & Year == 2002 ~ 14.90351,
+    NUTS2_ID == "ITC2" & Year == 2001 ~ 14.90351,
+    NUTS2_ID == "ITC2" & Year == 2000 ~ 14.90351,
+    NUTS2_ID == "ITC2" & Year == 1999 ~ 14.90351,
+    NUTS2_ID == "PT20" & Year == 2002 ~ 11.958335,
+    NUTS2_ID == "PT20" & Year == 2001 ~ 11.958335,
+    NUTS2_ID == "PT20" & Year == 2006 ~ 15.89781,
+    NUTS2_ID == "PT20" & Year == 2005 ~ 15.89781,
+    NUTS2_ID == "PT30" & Year == 2002 ~ 13.675395,
+    NUTS2_ID == "PT30" & Year == 2001 ~ 13.675395,
+    NUTS2_ID == "UKE2" & Year == 2001 ~ 22.149575,
+    NUTS2_ID == "UKK3" & Year == 2003 ~ 21.150545,
+    NUTS2_ID == "UKM6" & Year == 2019 ~ 12.15795,
+    TRUE ~ unemployment
+  ))
+
+# Drop Finland before 2000 and FI20 always
+data <- data |> 
+  filter(!(Country == "FI" & Year < 2000)) |> 
+  filter(!(NUTS2_ID == "FI20"))
+
+plot_missing(data)
+```
+
+```{r}
+data <- data |> 
+  select(-"expenditure_1994-1999_budget")
+```
+
+
+Now I have:
+  1) expenditure per capita
+  2) number of unemployed per 1000 people
+  3) binary for poor regions
+  4) GDP per capita
+  5) investment per capita
+  6) % of people with tertiary education
+  
+Expected coefficients
+  expenditure -> negative
+  GDP -> negative
+  education -> negative
+  investment -> negative
+  poor binaries -> positive
+  interaction -> negative
+  
+## 1 - Absolute values
+
+```{r}
+data_ab <- data |>
+  # group_by(NUTS2_ID)  |> 
+  # mutate(across(starts_with("expenditure"), ~lag(., 5))) |> 
+  # mutate(across(starts_with("poor"), ~lag(., 5))) |> 
+  # ungroup() |> 
+  filter(Year >= 2000)
+
+data_ab |> 
+  group_by(Year) |> 
+  summarise(n_countries = n_distinct(Country))
+
+data_ab |> 
+  group_by(Year) |> 
+  summarise(n_regions = n_distinct(NUTS2_ID))
+```
+
+```{r}
+# Creates a list of dataframes, 1 per year
+list_data <- split(data_ab, data_ab$Year)
+
+# Removing columns with all NAs 
+# i.e. Keeping only the relevant budget cycle columns for each year
+list_data_cleaned <- map(list_data, ~ .x[, colSums(!is.na(.x)) > 0])
+
+# Keeping only the numeric variables for regression 
+list_data_cleaned <- map(list_data_cleaned, ~ 
+  .x |> 
+    select(where(is.numeric)) |> 
+    select(-Year))
+```
+
+```{r}
+regression_ab <- map(list_data_cleaned, function(df) {
+  exp_vars <- names(df)[startsWith(names(df), "expenditure")]
+  poor_vars <- names(df)[startsWith(names(df), "poor")]
+
+  # Backtick expenditure vars to safely include in formula
+  exp_vars_bt <- paste0("`", exp_vars, "`")
+
+  # Main effects
+  all_vars <- c(exp_vars_bt, poor_vars)
+
+  # Create all pairwise interactions: poor × expenditure
+  interaction_terms <- expand.grid(poor = poor_vars, 
+                                   exp = exp_vars_bt, 
+                                   stringsAsFactors = FALSE) |>
+    pmap_chr(~ paste0(..2, "*", ..1)) 
+  # Not all interactions are useful. I will here delete the uselss
+  useless <- c("`expenditure_1994-1999_budget`*poor00_06", 
+             "`expenditure_2000-2006_budget`*poor07_13",
+             "`expenditure_2007-2013_budget`*poor00_06",
+             "`expenditure_2007-2013_budget`*poor14_20",
+             "`expenditure_2014-2020_budget`*poor07_13")
+  filtered <- setdiff(interaction_terms, useless)
+
+  # Build final formula
+  formula <- as.formula(paste(
+    "unemployment ~ . +",
+    paste(c(filtered, all_vars), collapse = " + ")
+  ))
+
+  lm(formula, data = df)
+})
+
+names(regression_ab) <- names(list_data_cleaned)
+modelsummary(
+  models = regression_ab,
+  fmt = fmt_decimal(digits = 2),
+  stars = TRUE,
+  statistic = NULL,
+  coef_map = c("gdp", "investment", "education",
+               "expenditure_1994-1999_budget", "expenditure_2000-2006_budget",
+               "expenditure_2007-2013_budget", "expenditure_2014-2020_budget",
+               "poor00_06", "poor07_13", "poor14_20",
+               "expenditure_2000-2006_budget:poor00_06",
+               "expenditure_2007-2013_budget:poor07_13",
+               "expenditure_2014-2020_budget:poor14_20"),
+  gof_map = list(
+    list("raw" = "nobs", "clean" = "N, Obs", "fmt" = 0),
+    list("raw" = "r.squared", "clean" = "R2", "fmt" = 2),
+    list("raw" = "adj.r.squared", "clean" = "Adj. R2", "fmt" = 2)),
+  output = "html"
+)
+```
+
+```{r}
+mean(map_dbl(regression_ab, ~ summary(.)$r.squared))
+
+count_significant <- function(models, varname, level = 0.1) {
+  sum(map_lgl(models, ~ varname %in% rownames(coef(summary(.))) &&
+                       coef(summary(.))[varname, "Pr(>|t|)"] < level))
+}
+count_significant(regression_ab, "`expenditure_2000-2006_budget`:poor00_06")
+count_significant(regression_ab, "`expenditure_2007-2013_budget`:poor07_13")
+count_significant(regression_ab, "`expenditure_2014-2020_budget`:poor14_20")
+```
+
+## 2 - Growth rates
+
+```{r}
+data_gr <- data |> 
+  group_by(NUTS2_ID) |> 
+  mutate(
+    unemployment = (unemployment - lag(unemployment)) / lag(unemployment) * 100,
+    gdp = (gdp - lag(gdp)) / lag(gdp) * 100,
+    investment = (investment - lag(investment)) / lag(investment) * 100,
+    education = (education - lag(education)) / lag(education) * 100,
+    across(starts_with("expenditure"), 
+           ~ (log(. + 1e-6) - log(lag(. + 1e-6))) * 100)) |> 
+  ungroup()
+
+data_gr <- data_gr |>
+  # group_by(NUTS2_ID)  |>
+  # mutate(across(starts_with("expenditure"), ~lag(., 1))) |>
+  # mutate(across(starts_with("poor"), ~lag(., 1))) |>
+  # ungroup() |>
+  filter(Year >= 2001)
+
+data_gr |> 
+  group_by(Year) |> 
+  summarise(n_countries = n_distinct(Country))
+
+data_gr |> 
+  group_by(Year) |> 
+  summarise(n_regions = n_distinct(NUTS2_ID))
+```
+
+```{r}
+list_data_gr <- split(data_gr, data_gr$Year)
+list_data_gr_cleaned <- map(list_data_gr, ~ .x[, colSums(!is.na(.x)) > 0])
+list_data_gr_cleaned <- map(list_data_gr_cleaned, ~ 
+  .x |> 
+    select(where(is.numeric)) |> 
+    select(-Year))
+```
+
+```{r}
+regression_gr <- map(list_data_gr_cleaned, function(df) {
+  exp_vars <- names(df)[startsWith(names(df), "expenditure")]
+  poor_vars <- names(df)[startsWith(names(df), "poor")]
+
+  # Backtick expenditure vars to safely include in formula
+  exp_vars_bt <- paste0("`", exp_vars, "`")
+
+  # Main effects
+  all_vars <- c(exp_vars_bt, poor_vars)
+
+  # Create all pairwise interactions: poor × expenditure
+  interaction_terms <- expand.grid(poor = poor_vars, 
+                                   exp = exp_vars_bt, 
+                                   stringsAsFactors = FALSE) |>
+    pmap_chr(~ paste0(..2, "*", ..1)) 
+  # Not all interactions are useful. I will here delete the uselss
+  useless <- c("`expenditure_1994-1999_budget`*poor00_06", 
+             "`expenditure_2000-2006_budget`*poor07_13",
+             "`expenditure_2007-2013_budget`*poor00_06",
+             "`expenditure_2007-2013_budget`*poor14_20",
+             "`expenditure_2014-2020_budget`*poor07_13")
+  filtered <- setdiff(interaction_terms, useless)
+
+  # Build final formula
+  formula <- as.formula(paste(
+    "unemployment ~ . +",
+    paste(c(filtered, all_vars), collapse = " + ")
+  ))
+
+  lm(formula, data = df)
+})
+
+names(regression_gr) <- names(list_data_gr_cleaned)
+modelsummary(
+  models = regression_gr,
+  fmt = fmt_decimal(digits = 2),
+  stars = TRUE,
+  statistic = NULL,
+  coef_map = c("gdp", "investment", "education",
+               "expenditure_1994-1999_budget", "expenditure_2000-2006_budget",
+               "expenditure_2007-2013_budget", "expenditure_2014-2020_budget",
+               "poor00_06", "poor07_13", "poor14_20",
+               "expenditure_2000-2006_budget:poor00_06",
+               "expenditure_2007-2013_budget:poor07_13",
+               "expenditure_2014-2020_budget:poor14_20"),
+  gof_map = list(
+    list("raw" = "nobs", "clean" = "N, Obs", "fmt" = 0),
+    list("raw" = "r.squared", "clean" = "R2", "fmt" = 2),
+    list("raw" = "adj.r.squared", "clean" = "Adj. R2", "fmt" = 2)),
+  output = "html"
+)
+```
+
+```{r}
+mean(map_dbl(regression_gr, ~ summary(.)$r.squared))
+count_significant(regression_gr, "`expenditure_2000-2006_budget`:poor00_06")
+count_significant(regression_gr, "`expenditure_2007-2013_budget`:poor07_13")
+count_significant(regression_gr, "`expenditure_2014-2020_budget`:poor14_20")
+```
+
+## 3 - Growth rates over long periods of time
+
+```{r}
+data_growth <- data |> 
+  group_by(NUTS2_ID) |> 
+  mutate(
+    gdp = (gdp - lag(gdp, 3)) / lag(gdp, 3) * 100,
+    unemployment = (unemployment - lag(unemployment, 3)) / lag(unemployment, 3) * 100,
+    investment = (investment - lag(investment, 3)) / lag(investment, 3) * 100,
+    education = (education - lag(education, 3)) / lag(education, 3) * 100,
+  ) |> 
+  # mutate(
+  #   poor00_06 = case_when(
+  #     Year %in% c(2010, 2011, 2012) ~ lag(poor00_06, 3),
+  #     TRUE ~ poor00_06
+  #   ),
+  #   poor07_13 = case_when(
+  #     Year %in% c(2016, 2017, 2018) ~ lag(poor07_13, 3),
+  #     TRUE ~ poor07_13
+  #   )
+  # ) |> 
+  # mutate(across(
+  #   starts_with("expenditure"),
+  #   ~ slide_dbl(., ~ if (all(is.na(.x))) NA else sum(.x, na.rm = TRUE), .before = 3)
+  # )) |>
+  mutate(across(
+    starts_with("expenditure"),
+    ~ lag(., 3)
+  )) |>
+  mutate(across(
+    starts_with("poor"),
+    ~ lag(., 3)
+  )) |>
+  ungroup()
+
+
+data_growth <- data_growth |>
+  filter(Year >= 2003)
+
+data_growth |> 
+  group_by(Year) |> 
+  summarise(n_countries = n_distinct(Country))
+
+data_growth |> 
+  group_by(Year) |> 
+  summarise(n_regions = n_distinct(NUTS2_ID))
+```
+
+```{r}
+list_data_growth <- split(data_growth, data_growth$Year)
+list_data_growth_cleaned <- map(list_data_growth, ~ .x[, colSums(!is.na(.x)) > 0])
+list_data_growth_cleaned <- map(list_data_growth_cleaned, ~ 
+  .x |> 
+    select(where(is.numeric)) |> 
+    select(-Year))
+```
+
+```{r}
+regression_growth <- map(list_data_growth_cleaned, function(df) {
+  exp_vars <- names(df)[startsWith(names(df), "expenditure")]
+  poor_vars <- names(df)[startsWith(names(df), "poor")]
+
+  # Backtick expenditure vars to safely include in formula
+  exp_vars_bt <- paste0("`", exp_vars, "`")
+
+  # Main effects
+  all_vars <- c(exp_vars_bt, poor_vars)
+
+  # Create all pairwise interactions: poor × expenditure
+  interaction_terms <- expand.grid(poor = poor_vars, 
+                                   exp = exp_vars_bt, 
+                                   stringsAsFactors = FALSE) |>
+    pmap_chr(~ paste0(..2, "*", ..1)) 
+  # Not all interactions are useful. I will here delete the uselss
+  useless <- c("`expenditure_1994-1999_budget`*poor00_06", 
+             "`expenditure_2000-2006_budget`*poor07_13",
+             "`expenditure_2007-2013_budget`*poor00_06",
+             "`expenditure_2007-2013_budget`*poor14_20",
+             "`expenditure_2014-2020_budget`*poor07_13")
+  filtered <- setdiff(interaction_terms, useless)
+
+  # Build final formula
+  formula <- as.formula(paste(
+    "unemployment ~ . +",
+    paste(c(filtered, all_vars), collapse = " + ")
+  ))
+
+  lm(formula, data = df)
+})
+
+names(regression_growth) <- names(list_data_growth_cleaned)
+modelsummary(
+  models = regression_growth,
+  fmt = fmt_decimal(digits = 2),
+  stars = TRUE,
+  statistic = NULL,
+  coef_map = c("gdp", "investment", "education",
+               "expenditure_1994-1999_budget", "expenditure_2000-2006_budget",
+               "expenditure_2007-2013_budget", "expenditure_2014-2020_budget",
+               "poor00_06", "poor07_13", "poor14_20",
+               "expenditure_2000-2006_budget:poor00_06",
+               "expenditure_2007-2013_budget:poor07_13",
+               "expenditure_2014-2020_budget:poor14_20"),
+  gof_map = list(
+    list("raw" = "nobs", "clean" = "N, Obs", "fmt" = 0),
+    list("raw" = "r.squared", "clean" = "R2", "fmt" = 2),
+    list("raw" = "adj.r.squared", "clean" = "Adj. R2", "fmt" = 2)),
+  output = "html"
+)
+```
+
+```{r}
+mean(map_dbl(regression_growth, ~ summary(.)$r.squared))
+count_significant(regression_growth, "`expenditure_2000-2006_budget`:poor00_06")
+count_significant(regression_growth, "`expenditure_2007-2013_budget`:poor07_13")
+count_significant(regression_growth, "`expenditure_2014-2020_budget`:poor14_20")
+```
+
+## 4 - Autoregressive
+
+```{r}
+data_auto <- data |> 
+  group_by(NUTS2_ID) |> 
+  mutate(lag_unemployment = lag(unemployment, 1)) |> 
+  mutate(across(starts_with("expenditure"), ~lag(., 1))) |>
+  mutate(across(starts_with("poor"), ~lag(., 1))) |>
+  ungroup()
+
+data_auto <- data_auto |>
+  filter(Year >= 2003)
+
+data_auto |> 
+  group_by(Year) |> 
+  summarise(n_countries = n_distinct(Country))
+
+data_auto |> 
+  group_by(Year) |> 
+  summarise(n_regions = n_distinct(NUTS2_ID))
+```
+
+```{r}
+list_data_auto <- split(data_auto, data_auto$Year)
+list_data_auto_cleaned <- map(list_data_auto, ~ .x[, colSums(!is.na(.x)) > 0])
+list_data_auto_cleaned <- map(list_data_auto_cleaned, ~ 
+  .x |> 
+    select(where(is.numeric)) |> 
+    select(-Year))
+```
+
+```{r}
+regression_auto <- map(list_data_auto_cleaned, function(df) {
+  exp_vars <- names(df)[startsWith(names(df), "expenditure")]
+  poor_vars <- names(df)[startsWith(names(df), "poor")]
+
+  # Backtick expenditure vars to safely include in formula
+  exp_vars_bt <- paste0("`", exp_vars, "`")
+
+  # Main effects
+  all_vars <- c(exp_vars_bt, poor_vars)
+
+  # Create all pairwise interactions: poor × expenditure
+  interaction_terms <- expand.grid(poor = poor_vars, 
+                                   exp = exp_vars_bt, 
+                                   stringsAsFactors = FALSE) |>
+    pmap_chr(~ paste0(..2, "*", ..1)) 
+  # Not all interactions are useful. I will here delete the uselss
+  useless <- c("`expenditure_1994-1999_budget`*poor00_06", 
+             "`expenditure_2000-2006_budget`*poor07_13",
+             "`expenditure_2007-2013_budget`*poor00_06",
+             "`expenditure_2007-2013_budget`*poor14_20",
+             "`expenditure_2014-2020_budget`*poor07_13")
+  filtered <- setdiff(interaction_terms, useless)
+
+  # Build final formula
+  formula <- as.formula(paste(
+    "unemployment ~ . +",
+    paste(c(filtered, all_vars), collapse = " + ")
+  ))
+
+  lm(formula, data = df)
+})
+
+names(regression_auto) <- names(list_data_auto_cleaned)
+modelsummary(
+  models = regression_auto,
+  fmt = fmt_decimal(digits = 2),
+  stars = TRUE,
+  statistic = NULL,
+  coef_map = c("lag_unemployment", "gdp", "investment", "education",
+               "expenditure_1994-1999_budget", "expenditure_2000-2006_budget",
+               "expenditure_2007-2013_budget", "expenditure_2014-2020_budget",
+               "poor00_06", "poor07_13", "poor14_20",
+               "expenditure_2000-2006_budget:poor00_06",
+               "expenditure_2007-2013_budget:poor07_13",
+               "expenditure_2014-2020_budget:poor14_20"),
+  gof_map = list(
+    list("raw" = "nobs", "clean" = "N, Obs", "fmt" = 0),
+    list("raw" = "r.squared", "clean" = "R2", "fmt" = 2),
+    list("raw" = "adj.r.squared", "clean" = "Adj. R2", "fmt" = 2)),
+  output = "html"
+)
+```
+
+```{r}
+mean(map_dbl(regression_auto, ~ summary(.)$r.squared))
+count_significant(regression_auto, "`expenditure_2000-2006_budget`:poor00_06")
+count_significant(regression_auto, "`expenditure_2007-2013_budget`:poor07_13")
+count_significant(regression_auto, "`expenditure_2014-2020_budget`:poor14_20")
+```
+
+
+
+
+
+
+Check total expenditure  -> Can be deleted
+
+```{r}
+data_growth <- data %>%
+  mutate(tot_exp = rowSums(select(., starts_with("expenditure")), na.rm = TRUE)) |>
+  select(-c("expenditure_2000-2006_budget",
+            "expenditure_2007-2013_budget", 
+            "expenditure_2014-2020_budget")) |> 
+  mutate(poor00_06 = ifelse(Year > 2006, NA, poor00_06),
+         poor07_13 = ifelse(Year > 2013, NA, poor07_13)) |> 
+  group_by(NUTS2_ID) |> 
+  mutate(
+    unemployment = (unemployment - lag(unemployment)) / lag(unemployment) * 100,
+    gdp = (gdp - lag(gdp, 3)) / lag(gdp, 3) * 100,
+    investment = (investment - lag(investment, 3)) / lag(investment, 3) * 100,
+    education = (education - lag(education, 3)) / lag(education, 3) * 100,
+    tot_exp = (log(tot_exp + 1e-6) - log(lag(tot_exp + 1e-6, 3))) * 100) |> 
+  ungroup()
+
+data_growth <- data_growth |>
+  filter(Year >= 2003)
+
+data_growth |> 
+  group_by(Year) |> 
+  summarise(n_countries = n_distinct(Country))
+
+data_growth |> 
+  group_by(Year) |> 
+  summarise(n_regions = n_distinct(NUTS2_ID))
+```
+
+```{r}
+list_data_growth <- split(data_growth, data_growth$Year)
+list_data_growth_cleaned <- map(list_data_growth, ~ .x[, colSums(!is.na(.x)) > 0])
+list_data_growth_cleaned <- map(list_data_growth_cleaned, ~ 
+  .x |> 
+    select(where(is.numeric)) |> 
+    select(-Year))
+```
+
+```{r}
+regression_growth <- map(list_data_growth_cleaned, function(df) {
+  exp_vars <- names(df)[startsWith(names(df), "tot_exp")]
+  poor_vars <- names(df)[startsWith(names(df), "poor")]
+
+  # Main effects
+  all_vars <- c(exp_vars, poor_vars)
+
+  # Create all pairwise interactions: poor × expenditure
+  interaction_terms <- expand.grid(poor = poor_vars, 
+                                   exp = exp_vars, 
+                                   stringsAsFactors = FALSE) |>
+    pmap_chr(~ paste0(..2, "*", ..1)) 
+
+  # Build final formula
+  formula <- as.formula(paste(
+    "unemployment ~ . +",
+    paste(c(interaction_terms, all_vars), collapse = " + ")
+  ))
+
+  lm(formula, data = df)
+})
+
+names(regression_growth) <- names(list_data_growth_cleaned)
+modelsummary(
+  models = regression_growth,
+  fmt = fmt_decimal(digits = 2),
+  stars = TRUE,
+  statistic = NULL,
+  coef_map = c("gdp", "investment", "education",
+               "tot_exp", "poor00_06", "poor07_13", "poor14_20",
+               "poor00_06:tot_exp", "poor07_13:tot_exp", "poor14_20:tot_exp"),
+  gof_map = list(
+    list("raw" = "nobs", "clean" = "N, Obs", "fmt" = 0),
+    list("raw" = "r.squared", "clean" = "R2", "fmt" = 2),
+    list("raw" = "adj.r.squared", "clean" = "Adj. R2", "fmt" = 2)),
+  output = "html"
+)
+```
+
+```{r}
+mean(map_dbl(regression_growth, ~ summary(.)$r.squared))
+count_significant(regression_growth, "poor00_06:tot_exp")
+count_significant(regression_growth, "poor07_13:tot_exp")
+count_significant(regression_growth, "poor14_20:tot_exp")
+```
