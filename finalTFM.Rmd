@@ -1220,19 +1220,25 @@ modelsummary(
   fmt = fmt_decimal(digits = 2),
   stars = TRUE,
   statistic = NULL,
-  coef_map = c("gdp", "investment", "education",
-               "expenditure_1994-1999_budget", "expenditure_2000-2006_budget",
-               "expenditure_2007-2013_budget", "expenditure_2014-2020_budget",
-               "poor00_06", "poor07_13", "poor14_20",
-               "expenditure_2000-2006_budget:poor00_06",
-               "expenditure_2007-2013_budget:poor07_13",
-               "expenditure_2014-2020_budget:poor14_20"),
+  coef_map = c("gdp" = "gdp", 
+               "investment" = "investment", 
+               "education" = "education",
+               "expenditure_2000-2006_budget" = "exp. 00-06 budget",
+               "expenditure_2007-2013_budget" = "exp. 07-13 budget", 
+               "expenditure_2014-2020_budget" = "exp. 14-20 budegt",
+               "poor00_06" = "poor 00-06 budget", 
+               "poor07_13" = "poor 07-13 budget", 
+               "poor14_20" = "poor 14-20 budget",
+               "expenditure_2000-2006_budget:poor00_06" = "exp*poor 00-06",
+               "expenditure_2007-2013_budget:poor07_13" = "exp*poor 07-13",
+               "expenditure_2014-2020_budget:poor14_20" = "exp*poor 14-20"),
   gof_map = list(
     list("raw" = "nobs", "clean" = "N, Obs", "fmt" = 0),
     list("raw" = "r.squared", "clean" = "R2", "fmt" = 2),
     list("raw" = "adj.r.squared", "clean" = "Adj. R2", "fmt" = 2)),
-  output = "html"
-)
+  # output = "gt") |>
+  # gt::gtsave("ab.png", expand = 0, vwidth = 1600, vheight = 1200)
+  output = "html")
 ```
 
 ```{r}
@@ -1325,19 +1331,25 @@ modelsummary(
   fmt = fmt_decimal(digits = 2),
   stars = TRUE,
   statistic = NULL,
-  coef_map = c("gdp", "investment", "education",
-               "expenditure_1994-1999_budget", "expenditure_2000-2006_budget",
-               "expenditure_2007-2013_budget", "expenditure_2014-2020_budget",
-               "poor00_06", "poor07_13", "poor14_20",
-               "expenditure_2000-2006_budget:poor00_06",
-               "expenditure_2007-2013_budget:poor07_13",
-               "expenditure_2014-2020_budget:poor14_20"),
+  coef_map = c("gdp" = "gdp", 
+               "investment" = "investment", 
+               "education" = "education",
+               "expenditure_2000-2006_budget" = "exp. 00-06 budget",
+               "expenditure_2007-2013_budget" = "exp. 07-13 budget", 
+               "expenditure_2014-2020_budget" = "exp. 14-20 budegt",
+               "poor00_06" = "poor 00-06 budget", 
+               "poor07_13" = "poor 07-13 budget", 
+               "poor14_20" = "poor 14-20 budget",
+               "expenditure_2000-2006_budget:poor00_06" = "exp*poor 00-06",
+               "expenditure_2007-2013_budget:poor07_13" = "exp*poor 07-13",
+               "expenditure_2014-2020_budget:poor14_20" = "exp*poor 14-20"),
   gof_map = list(
     list("raw" = "nobs", "clean" = "N, Obs", "fmt" = 0),
     list("raw" = "r.squared", "clean" = "R2", "fmt" = 2),
     list("raw" = "adj.r.squared", "clean" = "Adj. R2", "fmt" = 2)),
-  output = "html"
-)
+  # output = "gt") |>
+  # gt::gtsave("gr.png", expand = 0, vwidth = 1600, vheight = 1200)
+  output = "html")
 ```
 
 ```{r}
@@ -1443,19 +1455,25 @@ modelsummary(
   fmt = fmt_decimal(digits = 2),
   stars = TRUE,
   statistic = NULL,
-  coef_map = c("gdp", "investment", "education",
-               "expenditure_1994-1999_budget", "expenditure_2000-2006_budget",
-               "expenditure_2007-2013_budget", "expenditure_2014-2020_budget",
-               "poor00_06", "poor07_13", "poor14_20",
-               "expenditure_2000-2006_budget:poor00_06",
-               "expenditure_2007-2013_budget:poor07_13",
-               "expenditure_2014-2020_budget:poor14_20"),
+  coef_map = c("gdp" = "gdp", 
+               "investment" = "investment", 
+               "education" = "education",
+               "expenditure_2000-2006_budget" = "exp. 00-06 budget",
+               "expenditure_2007-2013_budget" = "exp. 07-13 budget", 
+               "expenditure_2014-2020_budget" = "exp. 14-20 budegt",
+               "poor00_06" = "poor 00-06 budget", 
+               "poor07_13" = "poor 07-13 budget", 
+               "poor14_20" = "poor 14-20 budget",
+               "expenditure_2000-2006_budget:poor00_06" = "exp*poor 00-06",
+               "expenditure_2007-2013_budget:poor07_13" = "exp*poor 07-13",
+               "expenditure_2014-2020_budget:poor14_20" = "exp*poor 14-20"),
   gof_map = list(
     list("raw" = "nobs", "clean" = "N, Obs", "fmt" = 0),
     list("raw" = "r.squared", "clean" = "R2", "fmt" = 2),
     list("raw" = "adj.r.squared", "clean" = "Adj. R2", "fmt" = 2)),
-  output = "html"
-)
+  # output = "gt") |>
+  # gt::gtsave("long_gr.png", expand = 0, vwidth = 1600, vheight = 1200)
+  output = "html")
 ```
 
 ```{r}
@@ -1471,12 +1489,12 @@ count_significant(regression_growth, "`expenditure_2014-2020_budget`:poor14_20")
 data_auto <- data |> 
   group_by(NUTS2_ID) |> 
   mutate(lag_unemployment = lag(unemployment, 1)) |> 
-  mutate(across(starts_with("expenditure"), ~lag(., 1))) |>
-  mutate(across(starts_with("poor"), ~lag(., 1))) |>
+  # mutate(across(starts_with("expenditure"), ~lag(., 1))) |>
+  # mutate(across(starts_with("poor"), ~lag(., 1))) |>
   ungroup()
 
 data_auto <- data_auto |>
-  filter(Year >= 2003)
+  filter(Year >= 2000)
 
 data_auto |> 
   group_by(Year) |> 
@@ -1535,19 +1553,26 @@ modelsummary(
   fmt = fmt_decimal(digits = 2),
   stars = TRUE,
   statistic = NULL,
-  coef_map = c("lag_unemployment", "gdp", "investment", "education",
-               "expenditure_1994-1999_budget", "expenditure_2000-2006_budget",
-               "expenditure_2007-2013_budget", "expenditure_2014-2020_budget",
-               "poor00_06", "poor07_13", "poor14_20",
-               "expenditure_2000-2006_budget:poor00_06",
-               "expenditure_2007-2013_budget:poor07_13",
-               "expenditure_2014-2020_budget:poor14_20"),
+  coef_map = c("lag_unemployment" = "lag unemployment", 
+               "gdp" = "gdp", 
+               "investment" = "investment", 
+               "education" = "education",
+               "expenditure_2000-2006_budget" = "exp. 00-06 budget",
+               "expenditure_2007-2013_budget" = "exp. 07-13 budget", 
+               "expenditure_2014-2020_budget" = "exp. 14-20 budegt",
+               "poor00_06" = "poor 00-06 budget", 
+               "poor07_13" = "poor 07-13 budget", 
+               "poor14_20" = "poor 14-20 budget",
+               "expenditure_2000-2006_budget:poor00_06" = "exp*poor 00-06",
+               "expenditure_2007-2013_budget:poor07_13" = "exp*poor 07-13",
+               "expenditure_2014-2020_budget:poor14_20" = "exp*poor 14-20"),
   gof_map = list(
     list("raw" = "nobs", "clean" = "N, Obs", "fmt" = 0),
     list("raw" = "r.squared", "clean" = "R2", "fmt" = 2),
     list("raw" = "adj.r.squared", "clean" = "Adj. R2", "fmt" = 2)),
-  output = "html"
-)
+  # output = "gt") |>
+  # gt::gtsave("auto.png", expand = 0, vwidth = 1600, vheight = 1200)
+  output = "html")
 ```
 
 ```{r}
@@ -1555,96 +1580,4 @@ mean(map_dbl(regression_auto, ~ summary(.)$r.squared))
 count_significant(regression_auto, "`expenditure_2000-2006_budget`:poor00_06")
 count_significant(regression_auto, "`expenditure_2007-2013_budget`:poor07_13")
 count_significant(regression_auto, "`expenditure_2014-2020_budget`:poor14_20")
-```
-
-
-
-
-
-
-Check total expenditure  -> Can be deleted
-
-```{r}
-data_growth <- data %>%
-  mutate(tot_exp = rowSums(select(., starts_with("expenditure")), na.rm = TRUE)) |>
-  select(-c("expenditure_2000-2006_budget",
-            "expenditure_2007-2013_budget", 
-            "expenditure_2014-2020_budget")) |> 
-  mutate(poor00_06 = ifelse(Year > 2006, NA, poor00_06),
-         poor07_13 = ifelse(Year > 2013, NA, poor07_13)) |> 
-  group_by(NUTS2_ID) |> 
-  mutate(
-    unemployment = (unemployment - lag(unemployment)) / lag(unemployment) * 100,
-    gdp = (gdp - lag(gdp, 3)) / lag(gdp, 3) * 100,
-    investment = (investment - lag(investment, 3)) / lag(investment, 3) * 100,
-    education = (education - lag(education, 3)) / lag(education, 3) * 100,
-    tot_exp = (log(tot_exp + 1e-6) - log(lag(tot_exp + 1e-6, 3))) * 100) |> 
-  ungroup()
-
-data_growth <- data_growth |>
-  filter(Year >= 2003)
-
-data_growth |> 
-  group_by(Year) |> 
-  summarise(n_countries = n_distinct(Country))
-
-data_growth |> 
-  group_by(Year) |> 
-  summarise(n_regions = n_distinct(NUTS2_ID))
-```
-
-```{r}
-list_data_growth <- split(data_growth, data_growth$Year)
-list_data_growth_cleaned <- map(list_data_growth, ~ .x[, colSums(!is.na(.x)) > 0])
-list_data_growth_cleaned <- map(list_data_growth_cleaned, ~ 
-  .x |> 
-    select(where(is.numeric)) |> 
-    select(-Year))
-```
-
-```{r}
-regression_growth <- map(list_data_growth_cleaned, function(df) {
-  exp_vars <- names(df)[startsWith(names(df), "tot_exp")]
-  poor_vars <- names(df)[startsWith(names(df), "poor")]
-
-  # Main effects
-  all_vars <- c(exp_vars, poor_vars)
-
-  # Create all pairwise interactions: poor × expenditure
-  interaction_terms <- expand.grid(poor = poor_vars, 
-                                   exp = exp_vars, 
-                                   stringsAsFactors = FALSE) |>
-    pmap_chr(~ paste0(..2, "*", ..1)) 
-
-  # Build final formula
-  formula <- as.formula(paste(
-    "unemployment ~ . +",
-    paste(c(interaction_terms, all_vars), collapse = " + ")
-  ))
-
-  lm(formula, data = df)
-})
-
-names(regression_growth) <- names(list_data_growth_cleaned)
-modelsummary(
-  models = regression_growth,
-  fmt = fmt_decimal(digits = 2),
-  stars = TRUE,
-  statistic = NULL,
-  coef_map = c("gdp", "investment", "education",
-               "tot_exp", "poor00_06", "poor07_13", "poor14_20",
-               "poor00_06:tot_exp", "poor07_13:tot_exp", "poor14_20:tot_exp"),
-  gof_map = list(
-    list("raw" = "nobs", "clean" = "N, Obs", "fmt" = 0),
-    list("raw" = "r.squared", "clean" = "R2", "fmt" = 2),
-    list("raw" = "adj.r.squared", "clean" = "Adj. R2", "fmt" = 2)),
-  output = "html"
-)
-```
-
-```{r}
-mean(map_dbl(regression_growth, ~ summary(.)$r.squared))
-count_significant(regression_growth, "poor00_06:tot_exp")
-count_significant(regression_growth, "poor07_13:tot_exp")
-count_significant(regression_growth, "poor14_20:tot_exp")
 ```
