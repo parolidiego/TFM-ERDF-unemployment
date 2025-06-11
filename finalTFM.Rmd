@@ -15,6 +15,10 @@ library(ARDECO)
 library(slider)
 library(modelsummary)
 library(mice)
+library(eurostat)
+library(sf)
+library(cowplot)
+library(grid)
 ```
 
 # ERDF expenditure data
@@ -1045,7 +1049,184 @@ data <- data |>
 
 # Exploratory data analysis
 
-To be done
+Line graph total expenditure per year
+
+```{r}
+data_graph <- data |> 
+  filter(Year >= 2000) |> 
+  group_by(Year) |> 
+  # Calculating total expenditure per year per budget period
+  summarise(expenditure00_06 = sum(`expenditure_2000-2006_budget`, na.rm = TRUE),
+            expenditure07_13 = sum(`expenditure_2007-2013_budget`, na.rm = TRUE),
+            expenditure14_20 = sum(`expenditure_2014-2020_budget`, na.rm = TRUE)) |> 
+  pivot_longer(cols = starts_with("expenditure"), 
+               names_to = "budget_period", 
+               values_to = "expenditure") |>
+  filter(expenditure > 0) |> 
+  # Modifying in order to have expenditure in billions
+  # Plus modifying budget period for readibility 
+  mutate(expenditure = expenditure / 1000000000,
+         budget_period = case_when(
+           budget_period == "expenditure00_06" ~ "2000-2006",
+           budget_period == "expenditure07_13" ~ "2007-2013",
+           budget_period == "expenditure14_20" ~ "2014-2020"))
+
+p <- ggplot(data_graph, aes(x = as.factor(Year), 
+                            y = expenditure, 
+                            fill = budget_period)) +
+  geom_col() +
+  labs(
+    title = "Total ERDF Expenditure per Year",
+    x = "Year",
+    y = "ERDF Expenditure (billions)",
+    fill = "Budget Period"
+  ) +
+  theme_minimal() +
+  ylim(0, 32) +
+  theme(axis.text.x = element_text(angle = 90, margin = margin(t = -10)),
+        axis.title.x = element_text(margin = margin(t = 10)),
+        panel.grid.major.x = element_blank(),
+        plot.title = element_text(hjust = 0.5),
+        plot.title.position = "plot")
+p
+
+ggsave("tot_exp_barplot.png", plot = p, width = 8, height = 5, dpi = 300)
+```
+
+...
+
+```{r}
+# Select 00-06 data
+data_graph <- data |> 
+  filter(Year == 2006) |> 
+  select(Country, NUTS2_ID, "expenditure_2000-2006_budget", poor00_06)
+
+# Get NUTS2 map
+nuts2_map <- get_eurostat_geospatial(
+  nuts_level = 2,
+  year = 2021,
+  resolution = "10",
+  output_class = "sf",
+  crs = "3035")
+
+# Exclude Turkey, Iceland and Svalbard
+nuts2_map <- nuts2_map %>%
+  filter(!CNTR_CODE %in% c("TR", "IS")) |> 
+  filter(!NUTS_ID == "NO0B")
+
+# Set a vector containing non-Eu countries present in the above df
+non_eu <- c("AL", "CH", "ME", "MK", "LI", "RS", "NO", "BG", "HR", "RO")
+
+# Join data to main df and mutate fill color
+nuts2_map <- nuts2_map |> 
+  left_join(data_graph, by = join_by("NUTS_ID" == "NUTS2_ID")) |> 
+  mutate(fill_color = case_when(
+    CNTR_CODE %in% non_eu ~ "white",
+    poor00_06 == 1 ~ "darkred",
+    poor00_06 == 0 ~ "lightblue",
+    is.na(poor00_06) ~ "grey"))
+
+# Territories which I do not want plotted
+overseas_codes <- c(
+  "ES70", # Canary Islands
+  "FRY1", # Guadeloupe
+  "FRY2", # Martinique
+  "FRY3", # Guyane
+  "FRY4", # Réunion
+  "FRY5", # Mayotte
+  "PT20", # Azores
+  "PT30", # Madeira
+  "MT00"  # Malta
+)
+
+# Main map dataframe excluding overseas
+main_map <- filter(nuts2_map, !NUTS_ID %in% overseas_codes)
+
+# Helper function for inset maps with title and border
+make_inset <- function(data, title) {
+  ggplot(data) +
+    geom_sf(aes(fill = fill_color), color = "black") +
+    scale_fill_identity() +
+    theme_void() +
+    labs(title = title) +
+    theme(plot.title = element_text(size = 7, hjust = 0.5))}
+
+# Create inset maps - no guadalupte and mayotte because no expenditure data for them
+inset_canary     <- make_inset(filter(nuts2_map, NUTS_ID == "ES70"), "Canary Islands")
+# inset_guadeloupe <- make_inset(filter(nuts2_map, NUTS_ID == "FRY1"), "Guadeloupe")
+inset_martinique <- make_inset(filter(nuts2_map, NUTS_ID == "FRY2"), "Martinique")
+inset_guyane     <- make_inset(filter(nuts2_map, NUTS_ID == "FRY3"), "Guyane")
+inset_reunion    <- make_inset(filter(nuts2_map, NUTS_ID == "FRY4"), "Réunion")
+# inset_mayotte    <- make_inset(filter(nuts2_map, NUTS_ID == "FRY5"), "Mayotte")
+inset_azores     <- make_inset(filter(nuts2_map, NUTS_ID == "PT20"), "Azores")
+inset_madeira    <- make_inset(filter(nuts2_map, NUTS_ID == "PT30"), "Madeira")
+inset_malta       <- make_inset(filter(nuts2_map, NUTS_ID == "MT00"), "Malta")
+
+# Draw the plot of continental Europe
+main_plot <- ggplot(main_map) +
+  geom_sf(aes(fill = fill_color), color = "black") +
+  scale_fill_identity(
+  name = "Region Type",
+  breaks = c("darkred", "lightblue", "grey", "white"),
+  labels = c("Least Developed", "Non Least Developed", "No data", "Non-EU"),
+  guide = "legend") + 
+  theme_void() +
+  theme(plot.margin = unit(c(0, 0, 0, 0), "cm"),
+        legend.position = c(0.05, 0.95),
+        legend.justification = c(0, 1), 
+        legend.background = element_rect(fill = "white", color = NA),
+        legend.title = element_text(size = 9),
+        legend.text = element_text(size = 8)) +
+  coord_sf(expand = FALSE) 
+
+# Combine all
+final_map <- ggdraw() +
+  # Main map
+  draw_plot(main_plot, x = 0, y = 0, width = 1, height = 0.95) +
+  
+  # Drawing rectangles to fill in the inset areas
+  draw_grob(rectGrob(x = 0.805, y = 0.845, width = 0.13, height = 0.11, 
+                     gp = gpar(col = "black", fill = "white", lwd = 1))) +
+  draw_grob(rectGrob(x = 0.935, y = 0.845, width = 0.13, height = 0.11, 
+                     gp = gpar(col = "black", fill = "white", lwd = 1))) +
+  draw_grob(rectGrob(x = 0.805, y = 0.735, width = 0.13, height = 0.11, 
+                     gp = gpar(col = "black", fill = "white", lwd = 1))) +
+  draw_grob(rectGrob(x = 0.935, y = 0.735, width = 0.13, height = 0.11, 
+                     gp = gpar(col = "black", fill = "white", lwd = 1))) +
+  draw_grob(rectGrob(x = 0.805, y = 0.625, width = 0.13, height = 0.11, 
+                     gp = gpar(col = "black", fill = "white", lwd = 1))) +
+  draw_grob(rectGrob(x = 0.935, y = 0.625, width = 0.13, height = 0.11, 
+                     gp = gpar(col = "black", fill = "white", lwd = 1))) +
+  draw_grob(rectGrob(x = 0.87, y = 0.515, width = 0.26, height = 0.11, 
+                     gp = gpar(col = "black", fill = "white", lwd = 1))) +
+  
+  # Row by row insets
+  draw_plot(inset_martinique, x = 0.74, y = 0.79, width = 0.13, height = 0.11) +
+  draw_plot(inset_guyane,     x = 0.87, y = 0.79, width = 0.13, height = 0.11) +
+  
+  draw_plot(inset_reunion,    x = 0.74, y = 0.68, width = 0.13, height = 0.11) +
+  draw_plot(inset_malta,      x = 0.87, y = 0.68, width = 0.13, height = 0.11) +
+
+  draw_plot(inset_madeira,    x = 0.74, y = 0.57, width = 0.13, height = 0.11) +
+  draw_plot(inset_azores,     x = 0.87, y = 0.57, width = 0.13, height = 0.11) +
+
+  draw_plot(inset_canary,     x = 0.74, y = 0.46, width = 0.26, height = 0.11) +
+  
+  # Plot title
+  draw_label("Region Classification for 2000-2006 budget",
+             x = 0.5,
+             y = 0.99,
+             fontface = 'bold',
+             size = 15,
+             hjust = 0.5,
+             vjust = 1)
+
+final_map
+
+ggsave("map00_06.png", plot = final_map, width = 6, height = 6, dpi = 500)
+```
+
+
 
 # Regressions
 
@@ -1236,9 +1417,9 @@ modelsummary(
     list("raw" = "nobs", "clean" = "N, Obs", "fmt" = 0),
     list("raw" = "r.squared", "clean" = "R2", "fmt" = 2),
     list("raw" = "adj.r.squared", "clean" = "Adj. R2", "fmt" = 2)),
-  # output = "gt") |>
-  # gt::gtsave("ab.png", expand = 0, vwidth = 1600, vheight = 1200)
-  output = "html")
+  output = "gt") |>
+  gt::gtsave("ab.png", expand = 0, vwidth = 2000, vheight = 1200)
+  #output = "html")
 ```
 
 ```{r}
@@ -1581,3 +1762,40 @@ count_significant(regression_auto, "`expenditure_2000-2006_budget`:poor00_06")
 count_significant(regression_auto, "`expenditure_2007-2013_budget`:poor07_13")
 count_significant(regression_auto, "`expenditure_2014-2020_budget`:poor14_20")
 ```
+
+
+
+
+
+
+
+
+```{r}
+coef_table <- imap_dfr(regression_ab, function(model, year) {
+  tidy(model) |> 
+    mutate(year = year)
+})
+
+coef_table <- coef_table |> 
+  filter(str_detect(term, "expenditure") & str_detect(term, "poor")) |>
+  mutate(estimate = if_else(p.value >= 0.1, 0, estimate)) |>
+  mutate(term = case_when(
+      str_detect(term, "2000-2006") ~ "2000–2006",
+      str_detect(term, "2007-2013") ~ "2007–2013",
+      str_detect(term, "2014-2020") ~ "2014–2020")) |> 
+  select(year, term, estimate)
+
+p <- ggplot(coef_table, aes(x = as.numeric(year), y = estimate, color = term)) +
+  geom_line(linewidth = 1) +
+  geom_point(size = 2) +
+  labs(
+    title = "Expenditure × Poor Interaction Coefficients Over Time",
+    x = "Year",
+    y = "Coefficient (p < 0.1 only)",
+    color = "Interaction Term"
+  ) +
+  theme_minimal()
+
+ggsave("expenditure_coefficients.png", plot = p, width = 8, height = 5, dpi = 300)
+```
+
