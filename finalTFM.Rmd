@@ -559,6 +559,17 @@ funds <- funds |>
       TRUE ~ `expenditure_2014-2020_budget`))
 ```
 
+However for countries that join the EU in 2007 I have to take into account that they did not receive any money from previous budget periods (although the rest of the EU from 2007 to 2009 was still spending money from 2000-2006 budget). So I need to fix for this and I will have less observations than expected for 2007, 2008 and 2009 when running regressions.
+
+```{r}
+funds <- funds |> 
+  mutate(`expenditure_2000-2006_budget` = case_when(
+    Country %in% c("RO", "BG") & Year %in% c(2007, 2008, 2009) ~ NA,
+    TRUE ~ `expenditure_2000-2006_budget`
+  ))
+```
+
+
 # Other data
 
 These are all the variables available in the ARDECO database, which will be our source for control variables.
@@ -1044,10 +1055,15 @@ data <- data |>
     Year >= 2000 & Year <=2009 & poor00_06 == 1 ~ 1,
     Year < 2000 ~ NA,
     Year > 2009 ~ NA,
+  )) |> 
+  # Fixing for 07 enlargment
+  mutate(poor00_06 = case_when(
+    Country %in% c("RO", "BG") & Year %in% c(2007, 2008, 2009) ~ NA,
+    TRUE ~ poor00_06
   ))
 ```
 
-# Exploratory data analysis
+# Exploratory data analysis - Graphs
 
 Line graph total expenditure per year
 
@@ -1093,13 +1109,16 @@ p
 ggsave("tot_exp_barplot.png", plot = p, width = 8, height = 5, dpi = 300)
 ```
 
-...
+Maps for 2000-2006 budget period
 
 ```{r}
 # Select 00-06 data
 data_graph <- data |> 
-  filter(Year == 2006) |> 
-  select(Country, NUTS2_ID, "expenditure_2000-2006_budget", poor00_06)
+  mutate(across(starts_with("expenditure"), ~ .x/population)) |> 
+  select(Country, NUTS2_ID, "expenditure_2000-2006_budget", poor00_06) |> 
+  drop_na() |> 
+  summarise(mean_exp = mean(`expenditure_2000-2006_budget`, na.rm = TRUE),
+            .by = c("Country", "NUTS2_ID", "poor00_06"))
 
 # Get NUTS2 map
 nuts2_map <- get_eurostat_geospatial(
@@ -1122,9 +1141,19 @@ nuts2_map <- nuts2_map |>
   left_join(data_graph, by = join_by("NUTS_ID" == "NUTS2_ID")) |> 
   mutate(fill_color = case_when(
     CNTR_CODE %in% non_eu ~ "white",
-    poor00_06 == 1 ~ "darkred",
-    poor00_06 == 0 ~ "lightblue",
-    is.na(poor00_06) ~ "grey"))
+    poor00_06 == 1 ~ "red",
+    poor00_06 == 0 ~ "lightgreen",
+    is.na(poor00_06) ~ "darkgrey")) |> 
+  mutate(is_non_eu = CNTR_CODE %in% non_eu)
+
+# Get full range across all regions
+global_range <- range(nuts2_map$mean_exp, na.rm = TRUE)
+# Set common gradient scale
+shared_gradient_scale <- scale_fill_gradient(
+  low = "lightgreen", high = "red", na.value = "darkgrey",
+  limits = global_range,
+  name = "Budget"
+)
 
 # Territories which I do not want plotted
 overseas_codes <- c(
@@ -1142,6 +1171,103 @@ overseas_codes <- c(
 # Main map dataframe excluding overseas
 main_map <- filter(nuts2_map, !NUTS_ID %in% overseas_codes)
 
+# Helper function for inset maps with title and border
+make_inset <- function(data, title) {
+  ggplot(data) +
+    geom_sf(aes(fill = mean_exp), color = "black") +
+    shared_gradient_scale +
+    theme_void() +
+    labs(title = title) +
+    theme(plot.title = element_text(size = 7, hjust = 0.5),
+          legend.position = "none")}
+
+# Create inset maps - no guadalupte and mayotte because no expenditure data for them
+inset_canary     <- make_inset(filter(nuts2_map, NUTS_ID == "ES70"), "Canary Islands")
+# inset_guadeloupe <- make_inset(filter(nuts2_map, NUTS_ID == "FRY1"), "Guadeloupe")
+inset_martinique <- make_inset(filter(nuts2_map, NUTS_ID == "FRY2"), "Martinique")
+inset_guyane     <- make_inset(filter(nuts2_map, NUTS_ID == "FRY3"), "Guyane")
+inset_reunion    <- make_inset(filter(nuts2_map, NUTS_ID == "FRY4"), "Réunion")
+# inset_mayotte    <- make_inset(filter(nuts2_map, NUTS_ID == "FRY5"), "Mayotte")
+inset_azores     <- make_inset(filter(nuts2_map, NUTS_ID == "PT20"), "Azores")
+inset_madeira    <- make_inset(filter(nuts2_map, NUTS_ID == "PT30"), "Madeira")
+inset_malta       <- make_inset(filter(nuts2_map, NUTS_ID == "MT00"), "Malta")
+
+# Draw the plot of continental Europe
+main_plot <- ggplot(main_map) +
+  geom_sf(aes(fill = mean_exp), color = "black") +
+  shared_gradient_scale +
+  theme_void() +
+  theme(
+    plot.margin = unit(c(0, 0, 0, 0), "cm"),
+    legend.position = c(0.05, 0.95),
+    legend.justification = c(0, 1),
+    legend.background = element_rect(fill = "white", color = NA),
+    legend.title = element_text(size = 9),
+    legend.text = element_text(size = 8)) +
+  coord_sf(expand = FALSE)
+
+# Non-EU overlay
+non_eu_overlay <- ggplot(main_map) +
+  geom_sf(aes(fill = is_non_eu), color = "black") +
+  scale_fill_manual(
+    values = c("TRUE" = "white", "FALSE" = NA),
+    na.value = NA,
+    guide = "none") +
+  theme_void() +
+  theme(
+    plot.margin = unit(c(0, 0, 0, 0), "cm")) +
+  coord_sf(expand = FALSE)
+
+# Combine all
+final_map <- ggdraw() +
+  # Main map
+  draw_plot(main_plot, x = 0, y = 0, width = 1, height = 0.95) +
+  draw_plot(non_eu_overlay, x = 0, y = 0, width = 1, height = 0.95) +
+  
+  # Drawing rectangles to fill in the inset areas
+  draw_grob(rectGrob(x = 0.805, y = 0.845, width = 0.13, height = 0.11, 
+                     gp = gpar(col = "black", fill = "white", lwd = 1))) +
+  draw_grob(rectGrob(x = 0.935, y = 0.845, width = 0.13, height = 0.11, 
+                     gp = gpar(col = "black", fill = "white", lwd = 1))) +
+  draw_grob(rectGrob(x = 0.805, y = 0.735, width = 0.13, height = 0.11, 
+                     gp = gpar(col = "black", fill = "white", lwd = 1))) +
+  draw_grob(rectGrob(x = 0.935, y = 0.735, width = 0.13, height = 0.11, 
+                     gp = gpar(col = "black", fill = "white", lwd = 1))) +
+  draw_grob(rectGrob(x = 0.805, y = 0.625, width = 0.13, height = 0.11, 
+                     gp = gpar(col = "black", fill = "white", lwd = 1))) +
+  draw_grob(rectGrob(x = 0.935, y = 0.625, width = 0.13, height = 0.11, 
+                     gp = gpar(col = "black", fill = "white", lwd = 1))) +
+  draw_grob(rectGrob(x = 0.87, y = 0.515, width = 0.26, height = 0.11, 
+                     gp = gpar(col = "black", fill = "white", lwd = 1))) +
+  
+  # Row by row insets
+  draw_plot(inset_martinique, x = 0.74, y = 0.79, width = 0.13, height = 0.11) +
+  draw_plot(inset_guyane,     x = 0.87, y = 0.79, width = 0.13, height = 0.11) +
+  
+  draw_plot(inset_reunion,    x = 0.74, y = 0.68, width = 0.13, height = 0.11) +
+  draw_plot(inset_malta,      x = 0.87, y = 0.68, width = 0.13, height = 0.11) +
+
+  draw_plot(inset_madeira,    x = 0.74, y = 0.57, width = 0.13, height = 0.11) +
+  draw_plot(inset_azores,     x = 0.87, y = 0.57, width = 0.13, height = 0.11) +
+
+  draw_plot(inset_canary,     x = 0.74, y = 0.46, width = 0.26, height = 0.11) +
+  
+  # Plot title
+  draw_label("Avg. ERDF expenditure per capita, 2000-2006 budget",
+             x = 0.5,
+             y = 0.99,
+             fontface = 'bold',
+             size = 15,
+             hjust = 0.5,
+             vjust = 1)
+
+final_map
+
+ggsave("map00_06_exp.png", plot = final_map, width = 6, height = 6, dpi = 500)
+```
+
+
+```{r}
 # Helper function for inset maps with title and border
 make_inset <- function(data, title) {
   ggplot(data) +
@@ -1167,7 +1293,7 @@ main_plot <- ggplot(main_map) +
   geom_sf(aes(fill = fill_color), color = "black") +
   scale_fill_identity(
   name = "Region Type",
-  breaks = c("darkred", "lightblue", "grey", "white"),
+  breaks = c("lightgreen", "red", "darkgrey", "white"),
   labels = c("Least Developed", "Non Least Developed", "No data", "Non-EU"),
   guide = "legend") + 
   theme_void() +
@@ -1226,7 +1352,491 @@ final_map
 ggsave("map00_06.png", plot = final_map, width = 6, height = 6, dpi = 500)
 ```
 
+Map for 2007-2013 budget period
 
+```{r}
+# Select 07-13 data
+data_graph <- data |> 
+  mutate(across(starts_with("expenditure"), ~ .x/population)) |> 
+  select(Country, NUTS2_ID, "expenditure_2007-2013_budget", poor07_13) |> 
+  drop_na() |> 
+  summarise(mean_exp = mean(`expenditure_2007-2013_budget`, na.rm = TRUE),
+            .by = c("Country", "NUTS2_ID", "poor07_13"))
+
+# Get NUTS2 map
+nuts2_map <- get_eurostat_geospatial(
+  nuts_level = 2,
+  year = 2021,
+  resolution = "10",
+  output_class = "sf",
+  crs = "3035")
+
+# Exclude Turkey, Iceland and Svalbard
+nuts2_map <- nuts2_map %>%
+  filter(!CNTR_CODE %in% c("TR", "IS")) |> 
+  filter(!NUTS_ID == "NO0B")
+
+# Set a vector containing non-Eu countries present in the above df
+non_eu <- c("AL", "CH", "ME", "MK", "LI", "RS", "NO", "HR")
+
+# Join data to main df and mutate fill color
+nuts2_map <- nuts2_map |> 
+  left_join(data_graph, by = join_by("NUTS_ID" == "NUTS2_ID")) |> 
+  mutate(fill_color = case_when(
+    CNTR_CODE %in% non_eu ~ "white",
+    poor07_13 == 1 ~ "red",
+    poor07_13 == 0 ~ "lightgreen",
+    is.na(poor07_13) ~ "darkgrey")) |> 
+  mutate(is_non_eu = CNTR_CODE %in% non_eu)
+
+# Get full range across all regions
+global_range <- range(nuts2_map$mean_exp, na.rm = TRUE)
+# Set common gradient scale
+shared_gradient_scale <- scale_fill_gradient(
+  low = "lightgreen", high = "red", na.value = "darkgrey",
+  limits = global_range,
+  name = "Budget"
+)
+
+# Territories which I do not want plotted
+overseas_codes <- c(
+  "ES70", # Canary Islands
+  "FRY1", # Guadeloupe
+  "FRY2", # Martinique
+  "FRY3", # Guyane
+  "FRY4", # Réunion
+  "FRY5", # Mayotte
+  "PT20", # Azores
+  "PT30", # Madeira
+  "MT00"  # Malta
+)
+
+# Main map dataframe excluding overseas
+main_map <- filter(nuts2_map, !NUTS_ID %in% overseas_codes)
+
+# Helper function for inset maps with title and border
+make_inset <- function(data, title) {
+  ggplot(data) +
+    geom_sf(aes(fill = mean_exp), color = "black") +
+    shared_gradient_scale +
+    theme_void() +
+    labs(title = title) +
+    theme(plot.title = element_text(size = 7, hjust = 0.5),
+          legend.position = "none")}
+
+# Create inset maps - no guadalupte and mayotte because no expenditure data for them
+inset_canary     <- make_inset(filter(nuts2_map, NUTS_ID == "ES70"), "Canary Islands")
+# inset_guadeloupe <- make_inset(filter(nuts2_map, NUTS_ID == "FRY1"), "Guadeloupe")
+inset_martinique <- make_inset(filter(nuts2_map, NUTS_ID == "FRY2"), "Martinique")
+inset_guyane     <- make_inset(filter(nuts2_map, NUTS_ID == "FRY3"), "Guyane")
+inset_reunion    <- make_inset(filter(nuts2_map, NUTS_ID == "FRY4"), "Réunion")
+# inset_mayotte    <- make_inset(filter(nuts2_map, NUTS_ID == "FRY5"), "Mayotte")
+inset_azores     <- make_inset(filter(nuts2_map, NUTS_ID == "PT20"), "Azores")
+inset_madeira    <- make_inset(filter(nuts2_map, NUTS_ID == "PT30"), "Madeira")
+inset_malta       <- make_inset(filter(nuts2_map, NUTS_ID == "MT00"), "Malta")
+
+# Draw the plot of continental Europe
+main_plot <- ggplot(main_map) +
+  geom_sf(aes(fill = mean_exp), color = "black") +
+  shared_gradient_scale +
+  theme_void() +
+  theme(
+    plot.margin = unit(c(0, 0, 0, 0), "cm"),
+    legend.position = c(0.05, 0.95),
+    legend.justification = c(0, 1),
+    legend.background = element_rect(fill = "white", color = NA),
+    legend.title = element_text(size = 9),
+    legend.text = element_text(size = 8)) +
+  coord_sf(expand = FALSE)
+
+# Non-EU overlay
+non_eu_overlay <- ggplot(main_map) +
+  geom_sf(aes(fill = is_non_eu), color = "black") +
+  scale_fill_manual(
+    values = c("TRUE" = "white", "FALSE" = NA),
+    na.value = NA,
+    guide = "none") +
+  theme_void() +
+  theme(
+    plot.margin = unit(c(0, 0, 0, 0), "cm")) +
+  coord_sf(expand = FALSE)
+
+# Combine all
+final_map <- ggdraw() +
+  # Main map
+  draw_plot(main_plot, x = 0, y = 0, width = 1, height = 0.95) +
+  draw_plot(non_eu_overlay, x = 0, y = 0, width = 1, height = 0.95) +
+  
+  # Drawing rectangles to fill in the inset areas
+  draw_grob(rectGrob(x = 0.805, y = 0.845, width = 0.13, height = 0.11, 
+                     gp = gpar(col = "black", fill = "white", lwd = 1))) +
+  draw_grob(rectGrob(x = 0.935, y = 0.845, width = 0.13, height = 0.11, 
+                     gp = gpar(col = "black", fill = "white", lwd = 1))) +
+  draw_grob(rectGrob(x = 0.805, y = 0.735, width = 0.13, height = 0.11, 
+                     gp = gpar(col = "black", fill = "white", lwd = 1))) +
+  draw_grob(rectGrob(x = 0.935, y = 0.735, width = 0.13, height = 0.11, 
+                     gp = gpar(col = "black", fill = "white", lwd = 1))) +
+  draw_grob(rectGrob(x = 0.805, y = 0.625, width = 0.13, height = 0.11, 
+                     gp = gpar(col = "black", fill = "white", lwd = 1))) +
+  draw_grob(rectGrob(x = 0.935, y = 0.625, width = 0.13, height = 0.11, 
+                     gp = gpar(col = "black", fill = "white", lwd = 1))) +
+  draw_grob(rectGrob(x = 0.87, y = 0.515, width = 0.26, height = 0.11, 
+                     gp = gpar(col = "black", fill = "white", lwd = 1))) +
+  
+  # Row by row insets
+  draw_plot(inset_martinique, x = 0.74, y = 0.79, width = 0.13, height = 0.11) +
+  draw_plot(inset_guyane,     x = 0.87, y = 0.79, width = 0.13, height = 0.11) +
+  
+  draw_plot(inset_reunion,    x = 0.74, y = 0.68, width = 0.13, height = 0.11) +
+  draw_plot(inset_malta,      x = 0.87, y = 0.68, width = 0.13, height = 0.11) +
+
+  draw_plot(inset_madeira,    x = 0.74, y = 0.57, width = 0.13, height = 0.11) +
+  draw_plot(inset_azores,     x = 0.87, y = 0.57, width = 0.13, height = 0.11) +
+
+  draw_plot(inset_canary,     x = 0.74, y = 0.46, width = 0.26, height = 0.11) +
+  
+  # Plot title
+  draw_label("Avg. ERDF Expenditure per capita, 2007-2013 budget",
+             x = 0.5,
+             y = 0.99,
+             fontface = 'bold',
+             size = 15,
+             hjust = 0.5,
+             vjust = 1)
+
+final_map
+
+ggsave("map07_13_exp.png", plot = final_map, width = 6, height = 6, dpi = 500)
+```
+
+
+```{r}
+# Helper function for inset maps with title and border
+make_inset <- function(data, title) {
+  ggplot(data) +
+    geom_sf(aes(fill = fill_color), color = "black") +
+    scale_fill_identity() +
+    theme_void() +
+    labs(title = title) +
+    theme(plot.title = element_text(size = 7, hjust = 0.5))}
+
+# Create inset maps - no guadalupte and mayotte because no expenditure data for them
+inset_canary     <- make_inset(filter(nuts2_map, NUTS_ID == "ES70"), "Canary Islands")
+# inset_guadeloupe <- make_inset(filter(nuts2_map, NUTS_ID == "FRY1"), "Guadeloupe")
+inset_martinique <- make_inset(filter(nuts2_map, NUTS_ID == "FRY2"), "Martinique")
+inset_guyane     <- make_inset(filter(nuts2_map, NUTS_ID == "FRY3"), "Guyane")
+inset_reunion    <- make_inset(filter(nuts2_map, NUTS_ID == "FRY4"), "Réunion")
+# inset_mayotte    <- make_inset(filter(nuts2_map, NUTS_ID == "FRY5"), "Mayotte")
+inset_azores     <- make_inset(filter(nuts2_map, NUTS_ID == "PT20"), "Azores")
+inset_madeira    <- make_inset(filter(nuts2_map, NUTS_ID == "PT30"), "Madeira")
+inset_malta       <- make_inset(filter(nuts2_map, NUTS_ID == "MT00"), "Malta")
+
+# Draw the plot of continental Europe
+main_plot <- ggplot(main_map) +
+  geom_sf(aes(fill = fill_color), color = "black") +
+  scale_fill_identity(
+  name = "Region Type",
+  breaks = c("lightgreen", "red", "darkgrey", "white"),
+  labels = c("Least Developed", "Non Least Developed", "No data", "Non-EU"),
+  guide = "legend") + 
+  theme_void() +
+  theme(plot.margin = unit(c(0, 0, 0, 0), "cm"),
+        legend.position = c(0.05, 0.95),
+        legend.justification = c(0, 1), 
+        legend.background = element_rect(fill = "white", color = NA),
+        legend.title = element_text(size = 9),
+        legend.text = element_text(size = 8)) +
+  coord_sf(expand = FALSE) 
+
+# Combine all
+final_map <- ggdraw() +
+  # Main map
+  draw_plot(main_plot, x = 0, y = 0, width = 1, height = 0.95) +
+  
+  # Drawing rectangles to fill in the inset areas
+  draw_grob(rectGrob(x = 0.805, y = 0.845, width = 0.13, height = 0.11, 
+                     gp = gpar(col = "black", fill = "white", lwd = 1))) +
+  draw_grob(rectGrob(x = 0.935, y = 0.845, width = 0.13, height = 0.11, 
+                     gp = gpar(col = "black", fill = "white", lwd = 1))) +
+  draw_grob(rectGrob(x = 0.805, y = 0.735, width = 0.13, height = 0.11, 
+                     gp = gpar(col = "black", fill = "white", lwd = 1))) +
+  draw_grob(rectGrob(x = 0.935, y = 0.735, width = 0.13, height = 0.11, 
+                     gp = gpar(col = "black", fill = "white", lwd = 1))) +
+  draw_grob(rectGrob(x = 0.805, y = 0.625, width = 0.13, height = 0.11, 
+                     gp = gpar(col = "black", fill = "white", lwd = 1))) +
+  draw_grob(rectGrob(x = 0.935, y = 0.625, width = 0.13, height = 0.11, 
+                     gp = gpar(col = "black", fill = "white", lwd = 1))) +
+  draw_grob(rectGrob(x = 0.87, y = 0.515, width = 0.26, height = 0.11, 
+                     gp = gpar(col = "black", fill = "white", lwd = 1))) +
+  
+  # Row by row insets
+  draw_plot(inset_martinique, x = 0.74, y = 0.79, width = 0.13, height = 0.11) +
+  draw_plot(inset_guyane,     x = 0.87, y = 0.79, width = 0.13, height = 0.11) +
+  
+  draw_plot(inset_reunion,    x = 0.74, y = 0.68, width = 0.13, height = 0.11) +
+  draw_plot(inset_malta,      x = 0.87, y = 0.68, width = 0.13, height = 0.11) +
+
+  draw_plot(inset_madeira,    x = 0.74, y = 0.57, width = 0.13, height = 0.11) +
+  draw_plot(inset_azores,     x = 0.87, y = 0.57, width = 0.13, height = 0.11) +
+
+  draw_plot(inset_canary,     x = 0.74, y = 0.46, width = 0.26, height = 0.11) +
+  
+  # Plot title
+  draw_label("Region Classification for 2007-2013 budget",
+             x = 0.5,
+             y = 0.99,
+             fontface = 'bold',
+             size = 15,
+             hjust = 0.5,
+             vjust = 1)
+
+final_map
+
+ggsave("map07_13.png", plot = final_map, width = 6, height = 6, dpi = 500)
+```
+
+Map for 2014-2020 budget period
+
+```{r}
+# Select 14-20 data
+data_graph <- data |> 
+  mutate(across(starts_with("expenditure"), ~ .x/population)) |> 
+  select(Country, NUTS2_ID, "expenditure_2014-2020_budget", poor14_20) |> 
+  drop_na() |> 
+  summarise(mean_exp = mean(`expenditure_2014-2020_budget`, na.rm = TRUE),
+            .by = c("Country", "NUTS2_ID", "poor14_20"))
+
+# Get NUTS2 map
+nuts2_map <- get_eurostat_geospatial(
+  nuts_level = 2,
+  year = 2021,
+  resolution = "10",
+  output_class = "sf",
+  crs = "3035")
+
+# Exclude Turkey, Iceland and Svalbard
+nuts2_map <- nuts2_map %>%
+  filter(!CNTR_CODE %in% c("TR", "IS")) |> 
+  filter(!NUTS_ID == "NO0B")
+
+# Set a vector containing non-Eu countries present in the above df
+non_eu <- c("AL", "CH", "ME", "MK", "LI", "RS", "NO")
+
+# Join data to main df and mutate fill color
+nuts2_map <- nuts2_map |> 
+  left_join(data_graph, by = join_by("NUTS_ID" == "NUTS2_ID")) |> 
+  mutate(fill_color = case_when(
+    CNTR_CODE %in% non_eu ~ "white",
+    poor14_20 == 1 ~ "red",
+    poor14_20 == 0 ~ "lightgreen",
+    is.na(poor14_20) ~ "darkgrey")) |> 
+  mutate(is_non_eu = CNTR_CODE %in% non_eu)
+
+# Get full range across all regions
+global_range <- range(nuts2_map$mean_exp, na.rm = TRUE)
+# Set common gradient scale
+shared_gradient_scale <- scale_fill_gradient(
+  low = "lightgreen", high = "red", na.value = "darkgrey",
+  limits = global_range,
+  name = "Budget"
+)
+
+# Territories which I do not want plotted
+overseas_codes <- c(
+  "ES70", # Canary Islands
+  "FRY1", # Guadeloupe
+  "FRY2", # Martinique
+  "FRY3", # Guyane
+  "FRY4", # Réunion
+  "FRY5", # Mayotte
+  "PT20", # Azores
+  "PT30", # Madeira
+  "MT00"  # Malta
+)
+
+# Main map dataframe excluding overseas
+main_map <- filter(nuts2_map, !NUTS_ID %in% overseas_codes)
+
+# Helper function for inset maps with title and border
+make_inset <- function(data, title) {
+  ggplot(data) +
+    geom_sf(aes(fill = mean_exp), color = "black") +
+    shared_gradient_scale +
+    theme_void() +
+    labs(title = title) +
+    theme(plot.title = element_text(size = 7, hjust = 0.5),
+          legend.position = "none")}
+
+# Create inset maps - no guadalupte and mayotte because no expenditure data for them
+inset_canary     <- make_inset(filter(nuts2_map, NUTS_ID == "ES70"), "Canary Islands")
+# inset_guadeloupe <- make_inset(filter(nuts2_map, NUTS_ID == "FRY1"), "Guadeloupe")
+inset_martinique <- make_inset(filter(nuts2_map, NUTS_ID == "FRY2"), "Martinique")
+inset_guyane     <- make_inset(filter(nuts2_map, NUTS_ID == "FRY3"), "Guyane")
+inset_reunion    <- make_inset(filter(nuts2_map, NUTS_ID == "FRY4"), "Réunion")
+# inset_mayotte    <- make_inset(filter(nuts2_map, NUTS_ID == "FRY5"), "Mayotte")
+inset_azores     <- make_inset(filter(nuts2_map, NUTS_ID == "PT20"), "Azores")
+inset_madeira    <- make_inset(filter(nuts2_map, NUTS_ID == "PT30"), "Madeira")
+inset_malta       <- make_inset(filter(nuts2_map, NUTS_ID == "MT00"), "Malta")
+
+# Draw the plot of continental Europe
+main_plot <- ggplot(main_map) +
+  geom_sf(aes(fill = mean_exp), color = "black") +
+  shared_gradient_scale +
+  theme_void() +
+  theme(
+    plot.margin = unit(c(0, 0, 0, 0), "cm"),
+    legend.position = c(0.05, 0.95),
+    legend.justification = c(0, 1),
+    legend.background = element_rect(fill = "white", color = NA),
+    legend.title = element_text(size = 9),
+    legend.text = element_text(size = 8)) +
+  coord_sf(expand = FALSE)
+
+# Non-EU overlay
+non_eu_overlay <- ggplot(main_map) +
+  geom_sf(aes(fill = is_non_eu), color = "black") +
+  scale_fill_manual(
+    values = c("TRUE" = "white", "FALSE" = NA),
+    na.value = NA,
+    guide = "none") +
+  theme_void() +
+  theme(
+    plot.margin = unit(c(0, 0, 0, 0), "cm")) +
+  coord_sf(expand = FALSE)
+
+# Combine all
+final_map <- ggdraw() +
+  # Main map
+  draw_plot(main_plot, x = 0, y = 0, width = 1, height = 0.95) +
+  draw_plot(non_eu_overlay, x = 0, y = 0, width = 1, height = 0.95) +
+  
+  # Drawing rectangles to fill in the inset areas
+  draw_grob(rectGrob(x = 0.805, y = 0.845, width = 0.13, height = 0.11, 
+                     gp = gpar(col = "black", fill = "white", lwd = 1))) +
+  draw_grob(rectGrob(x = 0.935, y = 0.845, width = 0.13, height = 0.11, 
+                     gp = gpar(col = "black", fill = "white", lwd = 1))) +
+  draw_grob(rectGrob(x = 0.805, y = 0.735, width = 0.13, height = 0.11, 
+                     gp = gpar(col = "black", fill = "white", lwd = 1))) +
+  draw_grob(rectGrob(x = 0.935, y = 0.735, width = 0.13, height = 0.11, 
+                     gp = gpar(col = "black", fill = "white", lwd = 1))) +
+  draw_grob(rectGrob(x = 0.805, y = 0.625, width = 0.13, height = 0.11, 
+                     gp = gpar(col = "black", fill = "white", lwd = 1))) +
+  draw_grob(rectGrob(x = 0.935, y = 0.625, width = 0.13, height = 0.11, 
+                     gp = gpar(col = "black", fill = "white", lwd = 1))) +
+  draw_grob(rectGrob(x = 0.87, y = 0.515, width = 0.26, height = 0.11, 
+                     gp = gpar(col = "black", fill = "white", lwd = 1))) +
+  
+  # Row by row insets
+  draw_plot(inset_martinique, x = 0.74, y = 0.79, width = 0.13, height = 0.11) +
+  draw_plot(inset_guyane,     x = 0.87, y = 0.79, width = 0.13, height = 0.11) +
+  
+  draw_plot(inset_reunion,    x = 0.74, y = 0.68, width = 0.13, height = 0.11) +
+  draw_plot(inset_malta,      x = 0.87, y = 0.68, width = 0.13, height = 0.11) +
+
+  draw_plot(inset_madeira,    x = 0.74, y = 0.57, width = 0.13, height = 0.11) +
+  draw_plot(inset_azores,     x = 0.87, y = 0.57, width = 0.13, height = 0.11) +
+
+  draw_plot(inset_canary,     x = 0.74, y = 0.46, width = 0.26, height = 0.11) +
+  
+  # Plot title
+  draw_label("Avg. ERDF Expenditure per capita, 2014-2020 budget",
+             x = 0.5,
+             y = 0.99,
+             fontface = 'bold',
+             size = 15,
+             hjust = 0.5,
+             vjust = 1)
+
+final_map
+
+ggsave("map14_20_exp.png", plot = final_map, width = 6, height = 6, dpi = 500)
+```
+
+
+```{r}
+# Helper function for inset maps with title and border
+make_inset <- function(data, title) {
+  ggplot(data) +
+    geom_sf(aes(fill = fill_color), color = "black") +
+    scale_fill_identity() +
+    theme_void() +
+    labs(title = title) +
+    theme(plot.title = element_text(size = 7, hjust = 0.5))}
+
+# Create inset maps - no guadalupte and mayotte because no expenditure data for them
+inset_canary     <- make_inset(filter(nuts2_map, NUTS_ID == "ES70"), "Canary Islands")
+# inset_guadeloupe <- make_inset(filter(nuts2_map, NUTS_ID == "FRY1"), "Guadeloupe")
+inset_martinique <- make_inset(filter(nuts2_map, NUTS_ID == "FRY2"), "Martinique")
+inset_guyane     <- make_inset(filter(nuts2_map, NUTS_ID == "FRY3"), "Guyane")
+inset_reunion    <- make_inset(filter(nuts2_map, NUTS_ID == "FRY4"), "Réunion")
+# inset_mayotte    <- make_inset(filter(nuts2_map, NUTS_ID == "FRY5"), "Mayotte")
+inset_azores     <- make_inset(filter(nuts2_map, NUTS_ID == "PT20"), "Azores")
+inset_madeira    <- make_inset(filter(nuts2_map, NUTS_ID == "PT30"), "Madeira")
+inset_malta       <- make_inset(filter(nuts2_map, NUTS_ID == "MT00"), "Malta")
+
+# Draw the plot of continental Europe
+main_plot <- ggplot(main_map) +
+  geom_sf(aes(fill = fill_color), color = "black") +
+  scale_fill_identity(
+  name = "Region Type",
+  breaks = c("lightgreen", "red", "darkgrey", "white"),
+  labels = c("Least Developed", "Non Least Developed", "No data", "Non-EU"),
+  guide = "legend") + 
+  theme_void() +
+  theme(plot.margin = unit(c(0, 0, 0, 0), "cm"),
+        legend.position = c(0.05, 0.95),
+        legend.justification = c(0, 1), 
+        legend.background = element_rect(fill = "white", color = NA),
+        legend.title = element_text(size = 9),
+        legend.text = element_text(size = 8)) +
+  coord_sf(expand = FALSE) 
+
+# Combine all
+final_map <- ggdraw() +
+  # Main map
+  draw_plot(main_plot, x = 0, y = 0, width = 1, height = 0.95) +
+  
+  # Drawing rectangles to fill in the inset areas
+  draw_grob(rectGrob(x = 0.805, y = 0.845, width = 0.13, height = 0.11, 
+                     gp = gpar(col = "black", fill = "white", lwd = 1))) +
+  draw_grob(rectGrob(x = 0.935, y = 0.845, width = 0.13, height = 0.11, 
+                     gp = gpar(col = "black", fill = "white", lwd = 1))) +
+  draw_grob(rectGrob(x = 0.805, y = 0.735, width = 0.13, height = 0.11, 
+                     gp = gpar(col = "black", fill = "white", lwd = 1))) +
+  draw_grob(rectGrob(x = 0.935, y = 0.735, width = 0.13, height = 0.11, 
+                     gp = gpar(col = "black", fill = "white", lwd = 1))) +
+  draw_grob(rectGrob(x = 0.805, y = 0.625, width = 0.13, height = 0.11, 
+                     gp = gpar(col = "black", fill = "white", lwd = 1))) +
+  draw_grob(rectGrob(x = 0.935, y = 0.625, width = 0.13, height = 0.11, 
+                     gp = gpar(col = "black", fill = "white", lwd = 1))) +
+  draw_grob(rectGrob(x = 0.87, y = 0.515, width = 0.26, height = 0.11, 
+                     gp = gpar(col = "black", fill = "white", lwd = 1))) +
+  
+  # Row by row insets
+  draw_plot(inset_martinique, x = 0.74, y = 0.79, width = 0.13, height = 0.11) +
+  draw_plot(inset_guyane,     x = 0.87, y = 0.79, width = 0.13, height = 0.11) +
+  
+  draw_plot(inset_reunion,    x = 0.74, y = 0.68, width = 0.13, height = 0.11) +
+  draw_plot(inset_malta,      x = 0.87, y = 0.68, width = 0.13, height = 0.11) +
+
+  draw_plot(inset_madeira,    x = 0.74, y = 0.57, width = 0.13, height = 0.11) +
+  draw_plot(inset_azores,     x = 0.87, y = 0.57, width = 0.13, height = 0.11) +
+
+  draw_plot(inset_canary,     x = 0.74, y = 0.46, width = 0.26, height = 0.11) +
+  
+  # Plot title
+  draw_label("Region Classification for 2014-2020 budget",
+             x = 0.5,
+             y = 0.99,
+             fontface = 'bold',
+             size = 15,
+             hjust = 0.5,
+             vjust = 1)
+
+final_map
+
+ggsave("map14_20.png", plot = final_map, width = 6, height = 6, dpi = 500)
+```
 
 # Regressions
 
@@ -1328,6 +1938,91 @@ Expected coefficients
   poor binaries -> positive
   interaction -> negative
   
+## Exploratory data analysis - tables
+
+```{r}
+# Create summary for each budget period
+create_period_summary <- function(data, period_name, poor_var, expenditure_var) {
+  
+  # Filter out missing values using the poverty indicator
+  period_data <- data[!is.na(data[[poor_var]]), ]
+  
+  # Create poverty status labels
+  period_data$poverty_status <- ifelse(period_data[[poor_var]] == 1, "Least Developed", "Non Least Developed")
+  
+  # Calculate summary statistics
+  summary_stats <- period_data |> 
+    group_by(poverty_status) |> 
+    summarise(
+      n_regions = n_distinct(NUTS2_ID),
+      avg_expenditure = mean(get(expenditure_var), na.rm = TRUE),
+      avg_unemployment = mean(unemployment, na.rm = TRUE),
+      avg_gdp = mean(gdp, na.rm = TRUE),
+      avg_education = mean(education, na.rm = TRUE),
+      avg_investment = mean(investment, na.rm = TRUE),
+      .groups = 'drop'
+    ) |> 
+    mutate(budget_period = period_name)
+  
+  return(summary_stats)
+}
+
+# Generate summaries for each period
+summary_2000_2006 <- create_period_summary(data, "2000-2006", "poor00_06", "expenditure_2000-2006_budget")
+summary_2007_2013 <- create_period_summary(data, "2007-2013", "poor07_13", "expenditure_2007-2013_budget")
+summary_2014_2020 <- create_period_summary(data, "2014-2020", "poor14_20", "expenditure_2014-2020_budget")
+
+# Combine all summaries
+final_summary <- bind_rows(summary_2000_2006, summary_2007_2013, summary_2014_2020)
+
+# Reorder columns for better presentation
+final_summary <- final_summary |> 
+  select(budget_period, poverty_status, n_regions, avg_expenditure, 
+         avg_unemployment, avg_gdp, avg_investment, avg_education)
+
+table_gt <- final_summary |> 
+  # Arrange data by budget period, then poverty status
+  arrange(budget_period, poverty_status) |> 
+  # Group by budget period
+  gt(groupname_col = "budget_period") |> 
+  tab_header(
+    title = "Regional Economic Indicators by Budget Period",
+    subtitle = "Comparison between Least Developed and Non Least Developed Regions"
+  ) |> 
+  cols_label(
+    poverty_status = "",
+    n_regions = "N. of Obs.",
+    avg_expenditure = "ERDF Expenditure",
+    avg_unemployment = "Unemployment",
+    avg_gdp = "Real GDP",
+    avg_investment = "Investment",
+    avg_education = "Education") |> 
+  fmt_number(
+    columns = c(avg_gdp, avg_investment, avg_expenditure, 
+                avg_unemployment, avg_education),
+    decimals = 0,
+    use_seps = TRUE) |> 
+  cols_align(
+    align = "center",
+    columns = c(n_regions, avg_expenditure, avg_unemployment, 
+                avg_gdp, avg_investment, avg_education)) |> 
+  tab_spanner(
+    label = "Economic Indicators (Average per Budget Period)",
+    columns = c(avg_expenditure, avg_unemployment, 
+                avg_gdp, avg_investment, avg_education)
+  ) |> 
+  tab_source_note("Note: Expenditure, GDP and investment per capita; number of unemployed per 1000 people; % of population aged 25–64 with tertiary education.") |> 
+  tab_options(
+    heading.background.color = "#f8f9fa",
+    column_labels.background.color = "#e9ecef",
+    row_group.background.color = "#f1f3f4",
+    source_notes.background.color = "#f8f9fa")
+
+table_gt
+gtsave(table_gt, filename = "descriptive_summary.png")
+```
+
+  
 ## 1 - Absolute values
 
 ```{r}
@@ -1419,7 +2114,7 @@ modelsummary(
     list("raw" = "adj.r.squared", "clean" = "Adj. R2", "fmt" = 2)),
   output = "gt") |>
   gt::gtsave("ab.png", expand = 0, vwidth = 2000, vheight = 1200)
-  #output = "html")
+  # output = "html")
 ```
 
 ```{r}
@@ -1528,9 +2223,9 @@ modelsummary(
     list("raw" = "nobs", "clean" = "N, Obs", "fmt" = 0),
     list("raw" = "r.squared", "clean" = "R2", "fmt" = 2),
     list("raw" = "adj.r.squared", "clean" = "Adj. R2", "fmt" = 2)),
-  # output = "gt") |>
-  # gt::gtsave("gr.png", expand = 0, vwidth = 1600, vheight = 1200)
-  output = "html")
+  output = "gt") |>
+  gt::gtsave("gr.png", expand = 0, vwidth = 1600, vheight = 1200)
+  # output = "html")
 ```
 
 ```{r}
@@ -1652,9 +2347,9 @@ modelsummary(
     list("raw" = "nobs", "clean" = "N, Obs", "fmt" = 0),
     list("raw" = "r.squared", "clean" = "R2", "fmt" = 2),
     list("raw" = "adj.r.squared", "clean" = "Adj. R2", "fmt" = 2)),
-  # output = "gt") |>
-  # gt::gtsave("long_gr.png", expand = 0, vwidth = 1600, vheight = 1200)
-  output = "html")
+  output = "gt") |>
+  gt::gtsave("long_gr.png", expand = 0, vwidth = 1600, vheight = 1200)
+  # output = "html")
 ```
 
 ```{r}
@@ -1751,9 +2446,9 @@ modelsummary(
     list("raw" = "nobs", "clean" = "N, Obs", "fmt" = 0),
     list("raw" = "r.squared", "clean" = "R2", "fmt" = 2),
     list("raw" = "adj.r.squared", "clean" = "Adj. R2", "fmt" = 2)),
-  # output = "gt") |>
-  # gt::gtsave("auto.png", expand = 0, vwidth = 1600, vheight = 1200)
-  output = "html")
+  output = "gt") |>
+  gt::gtsave("auto.png", expand = 0, vwidth = 1600, vheight = 1200)
+  # output = "html")
 ```
 
 ```{r}
